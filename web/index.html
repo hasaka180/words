@@ -1,0 +1,1146 @@
+<title>වචන Word Notebook</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Noto+Sans+Sinhala:wght@400;500&family=Noto+Serif+Sinhala:wght@500;600&display=swap">
+
+<style>
+/* ---------- tokens ---------- */
+:root {
+  color-scheme: light;
+
+  --ground:    #F4F6F1;
+  --surface:   #FFFFFF;
+  --surface-2: #EBEFE8;
+  --ink:       #17212B;
+  --ink-soft:  #56646F;
+  --ink-faint: #8B98A3;
+  --rule:      #CFDCE5;
+  --edge:      #DEE4DA;
+  --accent:    #A8322A;
+  --accent-ink:#FFFFFF;
+  --accent-wash:#F5E3E0;
+  --sinhala:   #17605F;
+  --shadow-sm: 0 1px 2px rgba(23,33,43,.05);
+  --shadow-lg: 0 1px 2px rgba(23,33,43,.05), 0 14px 34px -18px rgba(23,33,43,.35);
+
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-ui: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-si-serif: "Noto Serif Sinhala", "Iskoola Pota", Georgia, serif;
+  --font-si-sans: "Noto Sans Sinhala", "Iskoola Pota", sans-serif;
+
+  --col: 44rem;
+  --margin-rule: 2.75rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground:    #101619;
+    --surface:   #18212A;
+    --surface-2: #1E2831;
+    --ink:       #E9EEF1;
+    --ink-soft:  #9AA9B4;
+    --ink-faint: #6E7D89;
+    --rule:      #2A3945;
+    --edge:      #26323C;
+    --accent:    #E38574;
+    --accent-ink:#241210;
+    --accent-wash:#33211E;
+    --sinhala:   #6CC3BE;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+    --shadow-lg: 0 1px 2px rgba(0,0,0,.35), 0 16px 38px -20px rgba(0,0,0,.85);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground:    #101619;
+  --surface:   #18212A;
+  --surface-2: #1E2831;
+  --ink:       #E9EEF1;
+  --ink-soft:  #9AA9B4;
+  --ink-faint: #6E7D89;
+  --rule:      #2A3945;
+  --edge:      #26323C;
+  --accent:    #E38574;
+  --accent-ink:#241210;
+  --accent-wash:#33211E;
+  --sinhala:   #6CC3BE;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-lg: 0 1px 2px rgba(0,0,0,.35), 0 16px 38px -20px rgba(0,0,0,.85);
+}
+
+/* ---------- base ---------- */
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+:is(button, input, textarea, select) { font: inherit; color: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.si { font-family: var(--font-si-sans); }
+
+.page {
+  max-width: var(--col);
+  margin: 0 auto;
+  padding: 2rem 1.25rem 5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+/* ---------- masthead ---------- */
+.masthead {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: .5rem 1rem;
+}
+
+.brand { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+
+.brand-si {
+  font-family: var(--font-si-serif);
+  font-weight: 600;
+  font-size: 1.5rem;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.brand h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.5rem;
+  letter-spacing: -.01em;
+  text-wrap: balance;
+}
+
+.meta {
+  grid-column: 1 / 2;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: .7rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  border: 1px solid var(--edge);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 7px;
+  padding: .5rem .8rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: background .14s ease, border-color .14s ease, color .14s ease;
+}
+.btn:hover { background: var(--surface-2); }
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 500;
+}
+.btn-primary:hover { background: var(--accent); filter: brightness(1.08); }
+
+.btn-icon {
+  width: 2.15rem;
+  height: 2.15rem;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--ink-soft);
+}
+.btn-icon:hover { color: var(--ink); }
+
+.btn-bare {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: .35rem;
+  border-radius: 6px;
+}
+.btn-bare:hover { color: var(--ink); background: var(--surface-2); }
+
+.btn[disabled] { opacity: .38; cursor: default; }
+.btn[disabled]:hover { background: var(--surface); }
+
+svg { width: 1.05rem; height: 1.05rem; display: block; flex: none; }
+svg path, svg circle, svg line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+[aria-pressed="true"] .icon-star path { fill: currentColor; }
+[aria-pressed="true"].star-btn { color: var(--accent); }
+
+/* ---------- word card ---------- */
+.card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 1.4rem 1.5rem 1.1rem calc(var(--margin-rule) + .6rem);
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+  overflow: hidden;
+}
+
+/* the exercise-book margin rule */
+.card::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: var(--margin-rule);
+  width: 1px;
+  background: var(--accent);
+  opacity: .5;
+}
+
+.card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: .1rem;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: .68rem;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.card-top-actions { display: flex; align-items: center; gap: .15rem; }
+
+.word {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(2.1rem, 8.5vw, 3.1rem);
+  line-height: 1.05;
+  letter-spacing: -.02em;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+}
+
+.sinhala {
+  margin: 0;
+  font-family: var(--font-si-serif);
+  font-weight: 500;
+  font-size: clamp(1.25rem, 5vw, 1.6rem);
+  line-height: 1.5;
+  color: var(--sinhala);
+  overflow-wrap: break-word;
+}
+
+.definition {
+  margin: .35rem 0 0;
+  font-size: 1rem;
+  color: var(--ink-soft);
+  max-width: 34em;
+}
+
+.example {
+  margin: 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1rem;
+  color: var(--ink-faint);
+  padding-left: .85rem;
+  border-left: 2px solid var(--rule);
+  max-width: 34em;
+}
+
+/* study mode: meaning hidden until revealed */
+.card.masked .maskable {
+  filter: blur(9px);
+  opacity: .55;
+  user-select: none;
+}
+.card.masked .reveal-hint { display: block; }
+.reveal-hint {
+  display: none;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: .68rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.card-foot {
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  margin-top: .8rem;
+  padding-top: .8rem;
+  border-top: 1px solid var(--rule);
+}
+.card-foot .spacer { flex: 1; }
+
+.study-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  font-family: var(--font-mono);
+  font-size: .68rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: .3rem .5rem;
+  border-radius: 6px;
+}
+.study-toggle:hover { background: var(--surface-2); }
+.study-toggle input { accent-color: var(--accent); margin: 0; }
+
+.progress {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  background: transparent;
+}
+.progress i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  opacity: .55;
+}
+.progress i.run { animation: fill var(--rotate, 9s) linear forwards; }
+@keyframes fill { from { width: 0 } to { width: 100% } }
+
+/* ---------- controls ---------- */
+.controls { display: flex; gap: .5rem; align-items: center; }
+
+.search {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+.search svg {
+  position: absolute;
+  left: .65rem;
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+.search input {
+  width: 100%;
+  padding: .55rem .7rem .55rem 2.15rem;
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.search input::placeholder { color: var(--ink-faint); }
+
+/* ---------- notebook list ---------- */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+  border-top: 1px solid var(--rule);
+}
+/* margin rule down the whole page of entries */
+.list::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: var(--margin-rule);
+  width: 1px;
+  background: var(--accent);
+  opacity: .35;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: .1rem;
+  text-align: left;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: .7rem .5rem .7rem calc(var(--margin-rule) + .7rem);
+  border-radius: 4px;
+}
+.row-main:hover { background: var(--surface-2); }
+.row.is-current .row-main { background: var(--accent-wash); }
+
+.row-en {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.1rem;
+  letter-spacing: -.01em;
+}
+.row-si {
+  font-family: var(--font-si-sans);
+  font-size: .95rem;
+  color: var(--sinhala);
+}
+.row-def {
+  font-size: .85rem;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-star { align-self: center; margin-right: .15rem; }
+
+/* ---------- empty / status ---------- */
+.empty {
+  border: 1px dashed var(--edge);
+  border-radius: 10px;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  color: var(--ink-soft);
+  display: grid;
+  gap: .75rem;
+  justify-items: center;
+}
+.empty h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.25rem;
+  color: var(--ink);
+}
+.empty p { margin: 0; max-width: 32em; font-size: .95rem; }
+
+.status {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: .68rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+}
+.status .dot {
+  width: .42rem; height: .42rem;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  flex: none;
+}
+.status.is-synced .dot { background: var(--sinhala); }
+.status.is-local .dot { background: var(--accent); }
+
+/* ---------- dialogs ---------- */
+dialog {
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0;
+  width: min(30rem, calc(100vw - 2rem));
+  box-shadow: var(--shadow-lg);
+}
+dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
+
+.dlg-head {
+  padding: 1.1rem 1.25rem .5rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.dlg-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+
+.dlg-body { padding: .5rem 1.25rem 1rem; display: grid; gap: .9rem; }
+
+.field { display: grid; gap: .3rem; }
+.field label {
+  font-family: var(--font-mono);
+  font-size: .68rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.field :is(input, textarea) {
+  width: 100%;
+  padding: .55rem .65rem;
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  background: var(--ground);
+  resize: vertical;
+}
+.field .hint { font-size: .78rem; color: var(--ink-faint); }
+#f-english { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; }
+#f-sinhala { font-family: var(--font-si-sans); font-size: 1.05rem; color: var(--sinhala); }
+
+.dlg-foot {
+  padding: .85rem 1.25rem 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  border-top: 1px solid var(--rule);
+}
+.dlg-foot .spacer { flex: 1; }
+.btn-danger { color: var(--accent); border-color: var(--edge); }
+.btn-danger:hover { background: var(--accent-wash); }
+
+.about-body { padding: .5rem 1.25rem 1rem; display: grid; gap: .85rem; font-size: .92rem; color: var(--ink-soft); }
+.about-body h3 {
+  margin: .3rem 0 0;
+  font-family: var(--font-ui);
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.about-body p { margin: 0; }
+.about-body ol { margin: 0; padding-left: 1.15rem; display: grid; gap: .3rem; }
+.about-body strong { color: var(--ink); font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  .progress { display: none; }
+}
+
+@media (max-width: 30rem) {
+  :root { --margin-rule: 2rem; }
+  .page { padding-inline: .9rem; }
+  .card { padding-right: 1rem; }
+}
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="brand">
+      <span class="brand-si">වචන</span>
+      <h1>Word Notebook</h1>
+    </div>
+    <button class="btn btn-icon" id="btn-about" title="About this notebook" aria-label="About this notebook">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.2 2.9c-.5.2-.8.7-.8 1.3v.4"/><path d="M12 17.2v.01"/></svg>
+    </button>
+    <p class="meta" id="meta">Loading…</p>
+  </header>
+
+  <article class="card" id="card" hidden>
+    <div class="card-top">
+      <span class="eyebrow"><span id="pos">0</span> / <span id="deck-total">0</span></span>
+      <div class="card-top-actions">
+        <button class="btn-bare star-btn" id="btn-star" aria-pressed="false" title="Favourite" aria-label="Favourite this word">
+          <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.7l2.6 5.3 5.8.85-4.2 4.1 1 5.75L12 17l-5.2 2.7 1-5.75-4.2-4.1 5.8-.85z"/></svg>
+        </button>
+        <button class="btn-bare" id="btn-edit" title="Edit word" aria-label="Edit this word">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19.2 8.8a2 2 0 0 0-2.83-2.83L5 17.2z"/><path d="M14.5 6.5l3 3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <h2 class="word" id="w-english">—</h2>
+    <p class="sinhala maskable" id="w-sinhala"></p>
+    <p class="definition maskable" id="w-definition"></p>
+    <p class="example maskable" id="w-example"></p>
+    <p class="reveal-hint" id="reveal-hint">Tap the card to reveal</p>
+
+    <div class="card-foot">
+      <button class="btn btn-icon" id="btn-prev" title="Previous word" aria-label="Previous word">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
+      </button>
+      <button class="btn btn-icon" id="btn-next" title="Next word" aria-label="Next word">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 5.5L16 12l-6.5 6.5"/></svg>
+      </button>
+      <button class="btn btn-icon" id="btn-shuffle" title="Shuffle the deck" aria-label="Shuffle the deck">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5h3.6l3.4 11H21"/><path d="M3 17.5h3.6l2-5.5"/><path d="M18 4l3 2.5-3 2.5"/><path d="M18 15l3 2.5-3 2.5"/></svg>
+      </button>
+      <span class="spacer"></span>
+      <label class="study-toggle">
+        <input type="checkbox" id="chk-study"> Study
+      </label>
+    </div>
+
+    <div class="progress"><i id="progress-bar"></i></div>
+  </article>
+
+  <div class="empty" id="empty" hidden>
+    <h2>Your notebook is empty</h2>
+    <p>Save an English word with its definition and Sinhala meaning. It starts showing on the card above straight away.</p>
+    <button class="btn btn-primary" id="btn-empty-add">Add your first word</button>
+  </div>
+
+  <div class="controls">
+    <div class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.2"/><path d="M15.6 15.6L20 20"/></svg>
+      <input type="search" id="search" placeholder="Search English, Sinhala or definition" aria-label="Search words">
+    </div>
+    <button class="btn btn-icon star-btn" id="btn-filter-fav" aria-pressed="false" title="Show favourites only" aria-label="Show favourites only">
+      <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.7l2.6 5.3 5.8.85-4.2 4.1 1 5.75L12 17l-5.2 2.7 1-5.75-4.2-4.1 5.8-.85z"/></svg>
+    </button>
+    <button class="btn btn-primary" id="btn-add">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"/></svg>
+      Add
+    </button>
+  </div>
+
+  <ol class="list" id="list"></ol>
+
+  <p class="status" id="status"><span class="dot"></span><span id="status-text">Connecting…</span></p>
+</div>
+
+<dialog id="dlg-edit">
+  <form method="dialog" id="form-word">
+    <div class="dlg-head"><h2 id="dlg-title">New word</h2></div>
+    <div class="dlg-body">
+      <div class="field">
+        <label for="f-english">English word</label>
+        <input id="f-english" name="english" required autocomplete="off" spellcheck="false" placeholder="Resilient">
+      </div>
+      <div class="field">
+        <label for="f-sinhala">Sinhala meaning</label>
+        <input id="f-sinhala" name="sinhala" autocomplete="off" placeholder="ඔරොත්තු දෙන">
+        <span class="hint">Add the Sinhala keyboard on your phone to type here: Settings › General › Keyboard.</span>
+      </div>
+      <div class="field">
+        <label for="f-definition">Definition</label>
+        <textarea id="f-definition" name="definition" rows="2" placeholder="Able to recover quickly from difficulties."></textarea>
+      </div>
+      <div class="field">
+        <label for="f-example">Example sentence</label>
+        <textarea id="f-example" name="example" rows="2" placeholder="She stayed resilient through a very hard year."></textarea>
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn btn-danger" id="btn-delete" hidden>Delete</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="btn-cancel">Cancel</button>
+      <button type="submit" class="btn btn-primary" id="btn-save">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-about">
+  <div class="dlg-head"><h2>About this notebook</h2></div>
+  <div class="about-body">
+    <p>Save English words with their definition and Sinhala meaning. The card at the top rotates through them so you keep meeting words you've saved.</p>
+
+    <h3>Keep it on your home screen</h3>
+    <ol>
+      <li>Open this page in <strong>Safari</strong> on your iPhone.</li>
+      <li>Tap the <strong>Share</strong> button, then <strong>Add to Home Screen</strong>.</li>
+      <li>It gets its own icon and opens straight to a word.</li>
+    </ol>
+    <p>A web page can't draw a live iOS widget tile — only a native app can. This is the closest equivalent: one tap, and a word is in front of you.</p>
+
+    <h3>Study mode</h3>
+    <p>Turn on <strong>Study</strong> and the meaning stays hidden until you tap the card. Rotation pauses so you can think.</p>
+
+    <h3>Keyboard</h3>
+    <p><strong>←</strong> and <strong>→</strong> move through the deck, <strong>S</strong> shuffles, <strong>N</strong> adds a word.</p>
+  </div>
+  <div class="dlg-foot">
+    <span class="spacer"></span>
+    <button class="btn btn-primary" id="btn-about-close">Done</button>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  "use strict";
+
+  var ROTATE_MS = 9000;
+  var LS_KEY = "wachana.words.v1";
+  var COLLECTION = "words";
+
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var db = null;              // set once claude.use("db") resolves
+  var words = [];             // newest first
+  var deck = [];              // the rotating set (favourites filter applied)
+  var cursor = 0;
+  var favOnly = false;
+  var query = "";
+  var study = false;
+  var revealed = false;
+  var editingId = null;
+  var timer = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  var el = {
+    card: $("card"), empty: $("empty"), list: $("list"), meta: $("meta"),
+    pos: $("pos"), deckTotal: $("deck-total"),
+    english: $("w-english"), sinhala: $("w-sinhala"),
+    definition: $("w-definition"), example: $("w-example"),
+    star: $("btn-star"), edit: $("btn-edit"),
+    prev: $("btn-prev"), next: $("btn-next"), shuffle: $("btn-shuffle"),
+    study: $("chk-study"), progress: $("progress-bar"),
+    search: $("search"), filterFav: $("btn-filter-fav"),
+    add: $("btn-add"), emptyAdd: $("btn-empty-add"),
+    status: $("status"), statusText: $("status-text"),
+    dlg: $("dlg-edit"), form: $("form-word"), dlgTitle: $("dlg-title"),
+    fEnglish: $("f-english"), fSinhala: $("f-sinhala"),
+    fDefinition: $("f-definition"), fExample: $("f-example"),
+    del: $("btn-delete"), cancel: $("btn-cancel"),
+    about: $("dlg-about"), aboutOpen: $("btn-about"), aboutClose: $("btn-about-close")
+  };
+
+  // ---------- storage ----------
+
+  function newId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function readLocal() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; }
+    catch (e) { return []; }
+  }
+
+  function writeLocal() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(words)); } catch (e) { /* private mode */ }
+  }
+
+  function body(w) {
+    return {
+      english: w.english, sinhala: w.sinhala, definition: w.definition,
+      example: w.example, favorite: !!w.favorite, createdAt: w.createdAt
+    };
+  }
+
+  function persist(word) {
+    if (db) {
+      db.collection(COLLECTION).doc(word.id).set(body(word))
+        .catch(function (e) { note("Could not save — " + e.code); });
+    } else {
+      writeLocal();
+      render();
+    }
+  }
+
+  function remove(id) {
+    var i = words.findIndex(function (w) { return w.id === id; });
+    if (i > -1) words.splice(i, 1);
+    if (db) {
+      db.collection(COLLECTION).doc(id).delete()
+        .catch(function (e) { note("Could not delete — " + e.code); });
+    } else {
+      writeLocal();
+    }
+    render();
+  }
+
+  function adopt(list) {
+    words = list.slice().sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+    render();
+  }
+
+  // ---------- deck + rendering ----------
+
+  function currentWord() { return deck[cursor] || null; }
+
+  function rebuildDeck() {
+    var keepId = deck[cursor] ? deck[cursor].id : null;
+    deck = words.filter(function (w) { return !favOnly || w.favorite; });
+    var at = keepId ? deck.findIndex(function (w) { return w.id === keepId; }) : -1;
+    cursor = at > -1 ? at : 0;
+    if (cursor >= deck.length) cursor = 0;
+  }
+
+  function visibleRows() {
+    var q = query.trim().toLowerCase();
+    return words.filter(function (w) {
+      if (favOnly && !w.favorite) return false;
+      if (!q) return true;
+      return (w.english + " " + w.sinhala + " " + w.definition + " " + w.example)
+        .toLowerCase().indexOf(q) > -1;
+    });
+  }
+
+  function render() {
+    rebuildDeck();
+    renderCard();
+    renderList();
+    renderMeta();
+  }
+
+  function renderMeta() {
+    var favs = words.filter(function (w) { return w.favorite; }).length;
+    el.meta.textContent = words.length === 0
+      ? "No words yet"
+      : words.length + (words.length === 1 ? " word" : " words") + " · " + favs + " favourite" + (favs === 1 ? "" : "s");
+  }
+
+  function renderCard() {
+    var w = currentWord();
+    var has = !!w;
+
+    el.card.hidden = !has;
+    el.empty.hidden = words.length !== 0;
+
+    if (!has) { stopTimer(); return; }
+
+    el.pos.textContent = String(cursor + 1);
+    el.deckTotal.textContent = String(deck.length);
+    el.english.textContent = w.english;
+    el.sinhala.textContent = w.sinhala || "—";
+    el.definition.textContent = w.definition || "";
+    el.definition.hidden = !w.definition;
+    el.example.textContent = w.example || "";
+    el.example.hidden = !w.example;
+    el.star.setAttribute("aria-pressed", w.favorite ? "true" : "false");
+
+    var masked = study && !revealed;
+    el.card.classList.toggle("masked", masked);
+
+    var only = deck.length < 2;
+    el.prev.disabled = only;
+    el.next.disabled = only;
+    el.shuffle.disabled = only;
+
+    restartTimer();
+  }
+
+  function renderList() {
+    var rows = visibleRows();
+    var current = currentWord();
+    el.list.textContent = "";
+
+    if (rows.length === 0) {
+      if (words.length > 0) {
+        var li = document.createElement("li");
+        li.className = "row";
+        var p = document.createElement("div");
+        p.className = "row-main";
+        p.style.cursor = "default";
+        p.textContent = query.trim()
+          ? 'No words match "' + query.trim() + '"'
+          : "No favourites yet — tap a star to add one.";
+        p.style.color = "var(--ink-faint)";
+        li.appendChild(p);
+        el.list.appendChild(li);
+      }
+      return;
+    }
+
+    rows.forEach(function (w) {
+      var li = document.createElement("li");
+      li.className = "row" + (current && current.id === w.id ? " is-current" : "");
+
+      var main = document.createElement("button");
+      main.type = "button";
+      main.className = "row-main";
+
+      var en = document.createElement("span");
+      en.className = "row-en";
+      en.textContent = w.english;
+      main.appendChild(en);
+
+      if (w.sinhala) {
+        var si = document.createElement("span");
+        si.className = "row-si";
+        si.textContent = w.sinhala;
+        main.appendChild(si);
+      }
+      if (w.definition) {
+        var df = document.createElement("span");
+        df.className = "row-def";
+        df.textContent = w.definition;
+        main.appendChild(df);
+      }
+
+      main.addEventListener("click", function () { jumpTo(w.id); });
+      main.addEventListener("dblclick", function () { openEditor(w.id); });
+
+      var star = document.createElement("button");
+      star.type = "button";
+      star.className = "btn-bare star-btn row-star";
+      star.setAttribute("aria-pressed", w.favorite ? "true" : "false");
+      star.setAttribute("aria-label", (w.favorite ? "Remove " : "Add ") + w.english + " to favourites");
+      star.innerHTML = '<svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.7l2.6 5.3 5.8.85-4.2 4.1 1 5.75L12 17l-5.2 2.7 1-5.75-4.2-4.1 5.8-.85z"/></svg>';
+      star.addEventListener("click", function () { toggleFav(w.id); });
+
+      li.appendChild(main);
+      li.appendChild(star);
+      el.list.appendChild(li);
+    });
+  }
+
+  function note(text, kind) {
+    el.statusText.textContent = text;
+    el.status.classList.toggle("is-synced", kind === "synced");
+    el.status.classList.toggle("is-local", kind === "local");
+  }
+
+  // ---------- actions ----------
+
+  function jumpTo(id) {
+    var at = deck.findIndex(function (w) { return w.id === id; });
+    if (at === -1 && favOnly) {           // the word is filtered out — drop the filter
+      favOnly = false;
+      el.filterFav.setAttribute("aria-pressed", "false");
+      rebuildDeck();
+      at = deck.findIndex(function (w) { return w.id === id; });
+    }
+    if (at === -1) return;
+    cursor = at;
+    revealed = false;
+    renderCard();
+    renderList();
+    el.card.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  }
+
+  function step(by) {
+    if (deck.length < 2) return;
+    cursor = (cursor + by + deck.length) % deck.length;
+    revealed = false;
+    renderCard();
+    renderList();
+  }
+
+  function shuffle() {
+    if (deck.length < 2) return;
+    var pick = cursor;
+    while (pick === cursor) pick = Math.floor(Math.random() * deck.length);
+    cursor = pick;
+    revealed = false;
+    renderCard();
+    renderList();
+  }
+
+  function toggleFav(id) {
+    var w = words.find(function (x) { return x.id === id; });
+    if (!w) return;
+    w.favorite = !w.favorite;
+    persist(w);
+    if (db) render();      // optimistic; the snapshot confirms
+  }
+
+  // ---------- rotation ----------
+
+  function stopTimer() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    el.progress.classList.remove("run");
+  }
+
+  function restartTimer() {
+    stopTimer();
+    if (reduced || deck.length < 2) return;
+    if (study && !revealed) return;      // thinking time — don't move on
+
+    el.progress.style.setProperty("--rotate", ROTATE_MS + "ms");
+    void el.progress.offsetWidth;        // reflow so the animation replays
+    el.progress.classList.add("run");
+    timer = setTimeout(function () { step(1); }, ROTATE_MS);
+  }
+
+  // ---------- editor ----------
+
+  function openEditor(id) {
+    editingId = id || null;
+    var w = id ? words.find(function (x) { return x.id === id; }) : null;
+
+    el.dlgTitle.textContent = w ? "Edit word" : "New word";
+    el.fEnglish.value = w ? w.english : "";
+    el.fSinhala.value = w ? w.sinhala : "";
+    el.fDefinition.value = w ? w.definition : "";
+    el.fExample.value = w ? w.example : "";
+    el.del.hidden = !w;
+
+    el.dlg.showModal();
+    el.fEnglish.focus();
+    el.fEnglish.select();
+  }
+
+  function saveFromForm() {
+    var english = el.fEnglish.value.trim();
+    if (!english) { el.fEnglish.focus(); return false; }
+
+    var w;
+    if (editingId) {
+      w = words.find(function (x) { return x.id === editingId; });
+      if (!w) return true;
+    } else {
+      w = { id: newId(), createdAt: Date.now(), favorite: false };
+      words.unshift(w);
+    }
+
+    w.english = english;
+    w.sinhala = el.fSinhala.value.trim();
+    w.definition = el.fDefinition.value.trim();
+    w.example = el.fExample.value.trim();
+
+    persist(w);
+    if (db) render();
+    if (!editingId) { rebuildDeck(); jumpTo(w.id); }
+    return true;
+  }
+
+  // ---------- wiring ----------
+
+  el.prev.addEventListener("click", function () { step(-1); });
+  el.next.addEventListener("click", function () { step(1); });
+  el.shuffle.addEventListener("click", shuffle);
+  el.star.addEventListener("click", function () {
+    var w = currentWord(); if (w) toggleFav(w.id);
+  });
+  el.edit.addEventListener("click", function () {
+    var w = currentWord(); if (w) openEditor(w.id);
+  });
+
+  el.card.addEventListener("click", function (e) {
+    if (e.target.closest("button") || e.target.closest("label")) return;
+    if (study && !revealed) { revealed = true; renderCard(); }
+  });
+
+  el.study.addEventListener("change", function () {
+    study = el.study.checked;
+    revealed = false;
+    renderCard();
+  });
+
+  el.search.addEventListener("input", function () {
+    query = el.search.value;
+    renderList();
+  });
+
+  el.filterFav.addEventListener("click", function () {
+    favOnly = !favOnly;
+    el.filterFav.setAttribute("aria-pressed", favOnly ? "true" : "false");
+    el.filterFav.title = favOnly ? "Show all words" : "Show favourites only";
+    render();
+  });
+
+  el.add.addEventListener("click", function () { openEditor(null); });
+  el.emptyAdd.addEventListener("click", function () { openEditor(null); });
+  el.cancel.addEventListener("click", function () { el.dlg.close(); });
+
+  el.form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (saveFromForm()) el.dlg.close();
+  });
+
+  el.del.addEventListener("click", function () {
+    if (editingId) remove(editingId);
+    el.dlg.close();
+  });
+
+  el.aboutOpen.addEventListener("click", function () { el.about.showModal(); });
+  el.aboutClose.addEventListener("click", function () { el.about.close(); });
+
+  document.addEventListener("keydown", function (e) {
+    if (el.dlg.open || el.about.open) return;
+    var t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    if (e.key === "ArrowLeft") { step(-1); }
+    else if (e.key === "ArrowRight") { step(1); }
+    else if (e.key === "s" || e.key === "S") { shuffle(); }
+    else if (e.key === "n" || e.key === "N") { e.preventDefault(); openEditor(null); }
+  });
+
+  // Pause rotation while the tab is hidden.
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) stopTimer(); else restartTimer();
+  });
+
+  // Helps iOS treat an added-to-home-screen copy as its own app.
+  ["apple-mobile-web-app-capable", "mobile-web-app-capable"].forEach(function (name) {
+    var m = document.createElement("meta");
+    m.name = name; m.content = "yes";
+    document.head.appendChild(m);
+  });
+  var t = document.createElement("meta");
+  t.name = "apple-mobile-web-app-title"; t.content = "Words";
+  document.head.appendChild(t);
+
+  // ---------- start ----------
+
+  adopt(readLocal());
+  note("Connecting…");
+
+  // window.claude only exists inside the artifact viewer; anywhere else
+  // (a saved file, another host) the page runs on local storage alone.
+  var api = (typeof window.claude !== "undefined" && window.claude &&
+             typeof window.claude.use === "function") ? window.claude : null;
+
+  if (!api) {
+    note("Saved on this device only", "local");
+    return;
+  }
+
+  api.use("db").then(function (store) {
+    if (!store) {
+      db = null;
+      note("Saved on this device only", "local");
+      return;
+    }
+    db = store;
+    db.collection(COLLECTION).orderBy("createdAt", "desc").onSnapshot(
+      function (snap) {
+        adopt(snap.docs.map(function (d) {
+          var v = d.data() || {};
+          return {
+            id: d.id,
+            english: v.english || "",
+            sinhala: v.sinhala || "",
+            definition: v.definition || "",
+            example: v.example || "",
+            favorite: !!v.favorite,
+            createdAt: typeof v.createdAt === "number" ? v.createdAt : 0
+          };
+        }));
+        note("Saved to your notebook", "synced");
+      },
+      function (err) {
+        db = null;
+        note("Offline — saving on this device", "local");
+        adopt(readLocal());
+      }
+    );
+  }).catch(function () {
+    db = null;
+    note("Saved on this device only", "local");
+  });
+})();
+</script>
