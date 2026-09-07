@@ -5,3 +5,7 @@ DerivedData/
 xcuserdata/
 *.xcworkspace/xcuserdata/
 .DS_Store
+
+# Node
+node_modules/
+.vercel/

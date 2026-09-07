@@ -166,6 +166,33 @@ until you tap the card, and rotation pauses so you get thinking time.
 
 Keyboard: `←` `→` move through the deck, `S` shuffles, `N` adds a word.
 
+## Filling words in automatically
+
+Type an English word in the editor and the definition, Sinhala meaning and two
+example sentences are looked up. Suggested fields are tinted and must be checked
+before saving; a suggestion never overwrites text that was typed by hand.
+
+This needs [`api/lookup.js`](api/lookup.js), a Vercel serverless function that
+asks Claude. Set **`ANTHROPIC_API_KEY`** in the Vercel project's environment
+variables and redeploy. Repeat lookups of the same word are served from the CDN
+for a week, so each word costs one API call regardless of how often it is typed.
+
+**Without the key** — and on GitHub Pages, which cannot run functions at all —
+the app falls back to [dictionaryapi.dev](https://dictionaryapi.dev): a good
+English definition, no Sinhala, and an example only for words that happen to
+have one. Nothing breaks; there is simply less to check.
+
+### Why not a free translation API
+
+The free en→si endpoints are not accurate enough to learn from. Sampling
+MyMemory gave *candid → "humble"*, *honest → "policy"*, *meticulous →
+"excellent"*, and *resilient →* a phrase closer to its opposite — four wrong out
+of five. Every public Lingva instance tested returned 500. dictionaryapi.dev has
+good definitions but carried an example for only two of six sampled words, and
+Tatoeba has real example sentences but sends no CORS headers, so a browser
+cannot read it. A wrong Sinhala meaning is worse for a learner than an empty
+field, which is why the good path costs an API key.
+
 ## Where the words live
 
 `localStorage`, on the one device — nothing is sent anywhere, and there is no

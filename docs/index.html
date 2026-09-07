@@ -301,6 +301,7 @@ svg path, svg circle, svg line {
 
 .example {
   margin: 0;
+  white-space: pre-line;
   font-family: var(--font-display);
   font-style: italic;
   font-size: 1rem;
@@ -557,6 +558,23 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
   resize: vertical;
 }
 .field .hint { font-size: .78rem; color: var(--ink-faint); }
+
+/* A field filled by lookup, not by the person. Cleared as soon as they type. */
+.field :is(input, textarea).is-suggested {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.lookup { display: flex; align-items: center; gap: .4rem; min-height: 1.1rem; }
+.lookup.is-busy { color: var(--accent); }
+.lookup .spin {
+  width: .6rem; height: .6rem;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 #f-english { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; }
 #f-sinhala { font-family: var(--font-si-sans); font-size: 1.05rem; color: var(--sinhala); }
 
@@ -691,6 +709,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
       <div class="field">
         <label for="f-english">English word</label>
         <input id="f-english" name="english" required autocomplete="off" spellcheck="false" placeholder="Resilient">
+        <span class="hint lookup" id="lookup-status" hidden></span>
       </div>
       <div class="field">
         <label for="f-sinhala">Sinhala meaning</label>
@@ -702,8 +721,8 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
         <textarea id="f-definition" name="definition" rows="2" placeholder="Able to recover quickly from difficulties."></textarea>
       </div>
       <div class="field">
-        <label for="f-example">Example sentence</label>
-        <textarea id="f-example" name="example" rows="2" placeholder="She stayed resilient through a very hard year."></textarea>
+        <label for="f-example">Example sentences</label>
+        <textarea id="f-example" name="example" rows="3" placeholder="She stayed resilient through a very hard year."></textarea>
       </div>
     </div>
     <div class="dlg-foot">
@@ -730,6 +749,9 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
 
     <h3>Where your words live</h3>
     <p>On this device, in this browser — nothing is sent anywhere. That also means they don't follow you to another phone, and clearing website data erases them. <strong>Export</strong> writes them to a file you can keep; <strong>Import</strong> reads one back, merging by word rather than replacing.</p>
+
+    <h3>Filling a word in</h3>
+    <p>Type the English word and the definition, Sinhala meaning and two examples are looked up for you. Suggested fields are tinted — <strong>check them before saving</strong>, and edit anything that reads wrong. A suggestion never overwrites text you typed yourself.</p>
 
     <h3>Study mode</h3>
     <p>Turn on <strong>Study</strong> and the meaning stays hidden until you tap the card. Rotation pauses so you can think.</p>
@@ -780,6 +802,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     dlg: $("dlg-edit"), form: $("form-word"), dlgTitle: $("dlg-title"),
     fEnglish: $("f-english"), fSinhala: $("f-sinhala"),
     fDefinition: $("f-definition"), fExample: $("f-example"),
+    lookupStatus: $("lookup-status"),
     del: $("btn-delete"), cancel: $("btn-cancel"),
     about: $("dlg-about"), aboutOpen: $("btn-about"), aboutClose: $("btn-about-close")
   };
@@ -1032,6 +1055,11 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     el.fExample.value = w ? w.example : "";
     el.del.hidden = !w;
 
+    if (lookupTimer) { clearTimeout(lookupTimer); lookupTimer = null; }
+    if (lookupAbort) { lookupAbort.abort(); lookupAbort = null; }
+    clearSuggestions();
+    lookupStatus("");
+
     el.dlg.showModal();
     el.fEnglish.focus();
     el.fEnglish.select();
@@ -1058,6 +1086,141 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     persist();
     if (!editingId) { rebuildDeck(); jumpTo(w.id); }
     return true;
+  }
+
+  // ---------- lookup ----------
+  //
+  // Types a word, gets a definition, a Sinhala meaning and two examples.
+  // /api/lookup asks a model that knows Sinhala; where that isn't deployed we
+  // fall back to dictionaryapi.dev, which gives a good English definition and
+  // nothing else. A suggestion NEVER overwrites something the person typed —
+  // only empty fields, or fields still holding an earlier suggestion.
+
+  var lookupTimer = null;
+  var lookupAbort = null;
+  var lookedUp = "";          // the word the current suggestions belong to
+
+  function suggestedFields() {
+    return [el.fSinhala, el.fDefinition, el.fExample];
+  }
+
+  function clearSuggestions() {
+    suggestedFields().forEach(function (f) { f.classList.remove("is-suggested"); });
+    lookedUp = "";
+  }
+
+  function canFill(field) {
+    return field.value.trim() === "" || field.classList.contains("is-suggested");
+  }
+
+  function fill(field, value) {
+    if (!value || !canFill(field)) return false;
+    field.value = value;
+    field.classList.add("is-suggested");
+    return true;
+  }
+
+  function lookupStatus(text, busy) {
+    el.lookupStatus.hidden = !text;
+    el.lookupStatus.classList.toggle("is-busy", !!busy);
+    el.lookupStatus.textContent = "";
+    if (busy) {
+      var dot = document.createElement("span");
+      dot.className = "spin";
+      el.lookupStatus.appendChild(dot);
+    }
+    if (text) el.lookupStatus.appendChild(document.createTextNode(text));
+  }
+
+  function scheduleLookup() {
+    if (lookupTimer) clearTimeout(lookupTimer);
+    var word = el.fEnglish.value.trim();
+
+    if (word.length < 2) { lookupStatus(""); return; }
+    if (word.toLowerCase() === lookedUp.toLowerCase()) return;
+
+    lookupTimer = setTimeout(function () { runLookup(word); }, 650);
+  }
+
+  function runLookup(word) {
+    if (lookupAbort) lookupAbort.abort();
+    lookupAbort = new AbortController();
+    var signal = lookupAbort.signal;
+
+    lookupStatus("Looking up " + word + "…", true);
+
+    fetch("api/lookup?word=" + encodeURIComponent(word), { signal: signal })
+      .then(function (r) {
+        // A JSON body means our endpoint answered — including its own 404.
+        // Anything else (a static host's 404 page, a proxy error) means there
+        // is no endpoint here, so fall through to the free dictionary.
+        var json = (r.headers.get("content-type") || "").indexOf("json") > -1;
+        if (!json) return { served: false };
+        return r.json().then(function (d) {
+          return { served: true, ok: r.ok, data: d };
+        });
+      })
+      .then(function (res) {
+        if (el.fEnglish.value.trim().toLowerCase() !== word.toLowerCase()) return;
+
+        if (!res.served) { dictionaryFallback(word, signal); return; }
+        if (!res.ok) {
+          // Our endpoint ran and had nothing, or is not configured.
+          if (res.data && res.data.error && /not configured/i.test(res.data.error)) {
+            dictionaryFallback(word, signal);
+          } else {
+            lookupStatus((res.data && res.data.error) || "No entry for that word");
+          }
+          return;
+        }
+
+        var d = res.data;
+        lookedUp = word;
+        var n = 0;
+        if (fill(el.fDefinition, d.definition)) n++;
+        if (fill(el.fSinhala, d.sinhala)) n++;
+        if (fill(el.fExample, (d.examples || []).join("\n"))) n++;
+        lookupStatus(n ? "Suggested — check it before saving" : "Already filled in");
+      })
+      .catch(function (e) {
+        if (e.name === "AbortError") return;
+        dictionaryFallback(word, signal);
+      });
+  }
+
+  // Free, no key, definitions only — used when /api/lookup isn't available.
+  function dictionaryFallback(word, signal) {
+    fetch("https://api.dictionaryapi.dev/api/v2/entries/en/" + encodeURIComponent(word), { signal: signal })
+      .then(function (r) {
+        if (!r.ok) throw new Error("no entry");
+        return r.json();
+      })
+      .then(function (data) {
+        if (!Array.isArray(data)) throw new Error("no entry");
+        if (el.fEnglish.value.trim().toLowerCase() !== word.toLowerCase()) return;
+
+        var defs = [], exs = [];
+        data.forEach(function (entry) {
+          (entry.meanings || []).forEach(function (m) {
+            (m.definitions || []).forEach(function (d) {
+              if (d.definition) defs.push(d.definition);
+              if (d.example) exs.push(d.example);
+            });
+          });
+        });
+        if (!defs.length) throw new Error("no entry");
+
+        lookedUp = word;
+        fill(el.fDefinition, defs[0]);
+        if (exs.length) fill(el.fExample, exs.slice(0, 2).join("\n"));
+        lookupStatus(exs.length
+          ? "Definition found — add the Sinhala meaning yourself"
+          : "Definition found — add the Sinhala meaning and an example");
+      })
+      .catch(function (e) {
+        if (e.name === "AbortError") return;
+        lookupStatus("Couldn't look that up — type it in");
+      });
   }
 
   // ---------- export / import ----------
@@ -1185,6 +1348,14 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
   el.del.addEventListener("click", function () {
     if (editingId) remove(editingId);
     el.dlg.close();
+  });
+
+  el.fEnglish.addEventListener("input", scheduleLookup);
+
+  // The moment they edit a suggested field it becomes theirs, and lookup
+  // stops touching it.
+  suggestedFields().forEach(function (f) {
+    f.addEventListener("input", function () { f.classList.remove("is-suggested"); });
   });
 
   el.exportBtn.addEventListener("click", exportWords);

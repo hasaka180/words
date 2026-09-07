@@ -1,0 +1,11 @@
+{
+  "name": "words",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "English-Sinhala vocabulary notebook",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
+    "zod": "^4.5.4"
+  }
+}
