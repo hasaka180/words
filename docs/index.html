@@ -751,7 +751,8 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     <p>On this device, in this browser — nothing is sent anywhere. That also means they don't follow you to another phone, and clearing website data erases them. <strong>Export</strong> writes them to a file you can keep; <strong>Import</strong> reads one back, merging by word rather than replacing.</p>
 
     <h3>Filling a word in</h3>
-    <p>Type the English word and the definition, Sinhala meaning and two examples are looked up for you. Suggested fields are tinted — <strong>check them before saving</strong>, and edit anything that reads wrong. A suggestion never overwrites text you typed yourself.</p>
+    <p>Type the English word and the definition, Sinhala meaning and example sentences are looked up for you. Suggested fields are tinted — <strong>check them before saving</strong>, and edit anything that reads wrong. A suggestion never overwrites text you typed yourself.</p>
+    <p>The translation is machine-made and free, so it is sometimes unavailable and sometimes just off. The line under the word field tells you what came back; whatever is missing, type it in.</p>
 
     <h3>Study mode</h3>
     <p>Turn on <strong>Study</strong> and the meaning stays hidden until you tap the card. Rotation pauses so you can think.</p>
@@ -1090,11 +1091,12 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
 
   // ---------- lookup ----------
   //
-  // Types a word, gets a definition, a Sinhala meaning and two examples.
-  // /api/lookup asks a model that knows Sinhala; where that isn't deployed we
-  // fall back to dictionaryapi.dev, which gives a good English definition and
-  // nothing else. A suggestion NEVER overwrites something the person typed —
-  // only empty fields, or fields still holding an earlier suggestion.
+  // Types a word, gets a definition, a Sinhala meaning and up to two examples.
+  // Three free sources, no keys, no account: dictionaryapi.dev for the
+  // definition, Google's public translate endpoint for the Sinhala, and
+  // Tatoeba (through api/examples) for real sentences. Each is optional —
+  // whatever answers gets used. A suggestion NEVER overwrites something the
+  // person typed: only empty fields, or fields still holding a suggestion.
 
   var lookupTimer = null;
   var lookupAbort = null;
@@ -1149,56 +1151,54 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
 
     lookupStatus("Looking up " + word + "…", true);
 
-    fetch("api/lookup?word=" + encodeURIComponent(word), { signal: signal })
-      .then(function (r) {
-        // A JSON body means our endpoint answered — including its own 404.
-        // Anything else (a static host's 404 page, a proxy error) means there
-        // is no endpoint here, so fall through to the free dictionary.
-        var json = (r.headers.get("content-type") || "").indexOf("json") > -1;
-        if (!json) return { served: false };
-        return r.json().then(function (d) {
-          return { served: true, ok: r.ok, data: d };
-        });
-      })
-      .then(function (res) {
-        if (el.fEnglish.value.trim().toLowerCase() !== word.toLowerCase()) return;
+    // Three independent sources, none of which is allowed to sink the others.
+    Promise.allSettled([
+      fetchEntry(word, signal),
+      fetchSinhala(word, signal),
+      fetchExamples(word, signal)
+    ]).then(function (r) {
+      if (signal.aborted) return;
+      // They kept typing — this answer is for a word that no longer matters.
+      if (el.fEnglish.value.trim().toLowerCase() !== word.toLowerCase()) return;
 
-        if (!res.served) { dictionaryFallback(word, signal); return; }
-        if (!res.ok) {
-          // Our endpoint ran and had nothing, or is not configured.
-          if (res.data && res.data.error && /not configured/i.test(res.data.error)) {
-            dictionaryFallback(word, signal);
-          } else {
-            lookupStatus((res.data && res.data.error) || "No entry for that word");
-          }
-          return;
-        }
+      var entry   = r[0].status === "fulfilled" ? r[0].value : null;
+      var sinhala = r[1].status === "fulfilled" ? r[1].value : null;
+      var extra   = r[2].status === "fulfilled" ? r[2].value : [];
 
-        var d = res.data;
-        lookedUp = word;
-        var n = 0;
-        if (fill(el.fDefinition, d.definition)) n++;
-        if (fill(el.fSinhala, d.sinhala)) n++;
-        if (fill(el.fExample, (d.examples || []).join("\n"))) n++;
-        lookupStatus(n ? "Suggested — check it before saving" : "Already filled in");
-      })
-      .catch(function (e) {
-        if (e.name === "AbortError") return;
-        dictionaryFallback(word, signal);
+      var examples = [];
+      var seen = {};
+      ((entry && entry.examples) || []).concat(extra).forEach(function (t) {
+        var key = t.toLowerCase();
+        if (!seen[key] && examples.length < 2) { seen[key] = true; examples.push(t); }
       });
+
+      if (!entry && !sinhala && !examples.length) {
+        lookupStatus("Couldn't look that up — type it in");
+        return;
+      }
+
+      lookedUp = word;
+      if (entry) fill(el.fDefinition, entry.definition);
+      if (sinhala) fill(el.fSinhala, sinhala);
+      if (examples.length) fill(el.fExample, examples.join("\n"));
+
+      if (entry && sinhala) lookupStatus("Suggested — check it before saving");
+      else if (entry) lookupStatus("Sinhala unavailable — type the meaning yourself");
+      else if (sinhala) lookupStatus("Sinhala added — no dictionary entry found");
+      else lookupStatus("Examples added — fill in the rest yourself");
+    });
   }
 
-  // Free, no key, definitions only — used when /api/lookup isn't available.
-  function dictionaryFallback(word, signal) {
-    fetch("https://api.dictionaryapi.dev/api/v2/entries/en/" + encodeURIComponent(word), { signal: signal })
+  // Definition, plus any example the entry happens to carry.
+  // Free, no key, CORS open.
+  function fetchEntry(word, signal) {
+    return fetch("https://api.dictionaryapi.dev/api/v2/entries/en/" + encodeURIComponent(word), { signal: signal })
       .then(function (r) {
         if (!r.ok) throw new Error("no entry");
         return r.json();
       })
       .then(function (data) {
         if (!Array.isArray(data)) throw new Error("no entry");
-        if (el.fEnglish.value.trim().toLowerCase() !== word.toLowerCase()) return;
-
         var defs = [], exs = [];
         data.forEach(function (entry) {
           (entry.meanings || []).forEach(function (m) {
@@ -1209,18 +1209,42 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
           });
         });
         if (!defs.length) throw new Error("no entry");
-
-        lookedUp = word;
-        fill(el.fDefinition, defs[0]);
-        if (exs.length) fill(el.fExample, exs.slice(0, 2).join("\n"));
-        lookupStatus(exs.length
-          ? "Definition found — add the Sinhala meaning yourself"
-          : "Definition found — add the Sinhala meaning and an example");
-      })
-      .catch(function (e) {
-        if (e.name === "AbortError") return;
-        lookupStatus("Couldn't look that up — type it in");
+        return { definition: defs[0], examples: exs };
       });
+  }
+
+  // Sinhala, from Google's public translate endpoint — no key, CORS open.
+  // It is undocumented: when it sees too much traffic from one address it
+  // answers with an HTML "Sorry..." page instead of JSON. Anything that isn't
+  // JSON counts as a miss, and the person types the meaning themselves.
+  function fetchSinhala(word, signal) {
+    var url = "https://translate.googleapis.com/translate_a/single" +
+              "?client=gtx&sl=en&tl=si&dt=t&q=" + encodeURIComponent(word);
+    return fetch(url, { signal: signal })
+      .then(function (r) {
+        var json = (r.headers.get("content-type") || "").indexOf("json") > -1;
+        if (!r.ok || !json) throw new Error("unavailable");
+        return r.json();
+      })
+      .then(function (d) {
+        var chunks = (d && d[0]) || [];
+        var text = chunks.map(function (c) { return (c && c[0]) || ""; }).join("").trim();
+        // A word it cannot translate comes back unchanged.
+        if (!text || text.toLowerCase() === word.toLowerCase()) throw new Error("no translation");
+        return text;
+      });
+  }
+
+  // Better examples, via our own Tatoeba proxy. Not present on a static host,
+  // which is fine — the dictionary entry may already have carried one.
+  function fetchExamples(word, signal) {
+    return fetch("api/examples?word=" + encodeURIComponent(word), { signal: signal })
+      .then(function (r) {
+        var json = (r.headers.get("content-type") || "").indexOf("json") > -1;
+        if (!r.ok || !json) throw new Error("unavailable");
+        return r.json();
+      })
+      .then(function (d) { return d.examples || []; });
   }
 
   // ---------- export / import ----------

@@ -168,30 +168,46 @@ Keyboard: `←` `→` move through the deck, `S` shuffles, `N` adds a word.
 
 ## Filling words in automatically
 
-Type an English word in the editor and the definition, Sinhala meaning and two
-example sentences are looked up. Suggested fields are tinted and must be checked
-before saving; a suggestion never overwrites text that was typed by hand.
+Type an English word in the editor and the definition, Sinhala meaning and up to
+two example sentences are looked up. Suggested fields are tinted and must be
+checked before saving; a suggestion never overwrites text typed by hand, and the
+moment a suggested field is edited it stops being touched.
 
-This needs [`api/lookup.js`](api/lookup.js), a Vercel serverless function that
-asks Claude. Set **`ANTHROPIC_API_KEY`** in the Vercel project's environment
-variables and redeploy. Repeat lookups of the same word are served from the CDN
-for a week, so each word costs one API call regardless of how often it is typed.
+Three free sources, **no API keys and no account**:
 
-**Without the key** — and on GitHub Pages, which cannot run functions at all —
-the app falls back to [dictionaryapi.dev](https://dictionaryapi.dev): a good
-English definition, no Sinhala, and an example only for words that happen to
-have one. Nothing breaks; there is simply less to check.
+| Field | Source | Notes |
+| --- | --- | --- |
+| Definition | [dictionaryapi.dev](https://dictionaryapi.dev) | CORS open, called straight from the page |
+| Sinhala | `translate.googleapis.com` (public endpoint) | CORS open, no key — see the caveat below |
+| Examples | [Tatoeba](https://tatoeba.org) via [`api/examples.js`](api/examples.js) | Proxied because Tatoeba sends no CORS headers |
 
-### Why not a free translation API
+Each source is independent — whatever answers gets used, and the status line
+under the word field says what came back. If translation is unavailable you
+still get the definition and examples, and type the Sinhala yourself.
 
-The free en→si endpoints are not accurate enough to learn from. Sampling
-MyMemory gave *candid → "humble"*, *honest → "policy"*, *meticulous →
-"excellent"*, and *resilient →* a phrase closer to its opposite — four wrong out
-of five. Every public Lingva instance tested returned 500. dictionaryapi.dev has
-good definitions but carried an example for only two of six sampled words, and
-Tatoeba has real example sentences but sends no CORS headers, so a browser
-cannot read it. A wrong Sinhala meaning is worse for a learner than an empty
-field, which is why the good path costs an API key.
+### The translation caveat
+
+`translate.googleapis.com/translate_a/single` is the endpoint Google's own web
+page uses. It needs no key and sends `Access-Control-Allow-Origin: *`, but it is
+**undocumented and rate-limited by IP**: past some volume it returns an HTML
+"Sorry…" page instead of JSON. The app treats any non-JSON reply as a miss.
+
+Because the page calls it directly from the browser, the request comes from each
+person's own address — one person adding words occasionally is a very different
+traffic pattern from a shared server address, which is why this is *not* proxied
+through the serverless function like Tatoeba is.
+
+It is also not a supported API, so it can change or stop without notice. The
+supported alternative is Google Cloud Translation (500k characters/month free),
+which needs a billing account with a card on file.
+
+### Why not the other free options
+
+Sampled before settling on the above: MyMemory's en→si gave *candid → "humble"*,
+*honest → "policy"*, *meticulous → "excellent"* and *resilient →* a phrase
+closer to its opposite — four wrong out of five. Every public Lingva instance
+returned HTTP 500. dictionaryapi.dev carried an example for only two of six
+sampled words, which is why Tatoeba is there to top them up.
 
 ## Where the words live
 
