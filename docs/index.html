@@ -1,8 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>වචන Word Notebook</title>
+<meta name="description" content="Save English words with their definition and Sinhala meaning, on a card that keeps rotating through what you have saved.">
+
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#F4F6F1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101619" media="(prefers-color-scheme: dark)">
+
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Words">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=Noto+Sans+Sinhala:wght@400;500&family=Noto+Serif+Sinhala:wght@500;600&display=swap">
 
 <style>
+/* ---------- reset ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; }
+img, svg { max-width: 100%; }
+[hidden] { display: none !important; }
+
 /* ---------- tokens ---------- */
 :root {
   color-scheme: light;
@@ -25,8 +51,8 @@
   --font-display: "Newsreader", Georgia, "Times New Roman", serif;
   --font-ui: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-si-serif: "Noto Serif Sinhala", "Iskoola Pota", Georgia, serif;
-  --font-si-sans: "Noto Sans Sinhala", "Iskoola Pota", sans-serif;
+  --font-si-serif: "Noto Serif Sinhala", "Sinhala Sangam MN", "Iskoola Pota", Georgia, serif;
+  --font-si-sans: "Noto Sans Sinhala", "Sinhala Sangam MN", "Iskoola Pota", sans-serif;
 
   --col: 44rem;
   --margin-rule: 2.75rem;
@@ -94,7 +120,11 @@ body {
 .page {
   max-width: var(--col);
   margin: 0 auto;
-  padding: 2rem 1.25rem 5rem;
+  padding:
+    calc(1.75rem + env(safe-area-inset-top))
+    calc(1.25rem + env(safe-area-inset-right))
+    calc(4rem + env(safe-area-inset-bottom))
+    calc(1.25rem + env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
@@ -467,6 +497,22 @@ svg path, svg circle, svg line {
 .status.is-local .dot { background: var(--accent); }
 
 /* ---------- dialogs ---------- */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding-top: .9rem;
+  border-top: 1px solid var(--rule);
+}
+.footer-spacer { flex: 1; }
+.footer-btn {
+  font-family: var(--font-mono);
+  font-size: .68rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  padding: .3rem .5rem;
+}
+
 dialog {
   border: 1px solid var(--edge);
   border-radius: 12px;
@@ -546,11 +592,16 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
 
 @media (max-width: 30rem) {
   :root { --margin-rule: 2rem; }
-  .page { padding-inline: .9rem; }
+  .page {
+    padding-left: calc(.9rem + env(safe-area-inset-left));
+    padding-right: calc(.9rem + env(safe-area-inset-right));
+  }
   .card { padding-right: 1rem; }
 }
 </style>
+</head>
 
+<body>
 <div class="page">
 
   <header class="masthead">
@@ -624,7 +675,13 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
 
   <ol class="list" id="list"></ol>
 
-  <p class="status" id="status"><span class="dot"></span><span id="status-text">Connecting…</span></p>
+  <footer class="footer">
+    <p class="status" id="status"><span class="dot"></span><span id="status-text">Loading…</span></p>
+    <span class="footer-spacer"></span>
+    <button class="btn-bare footer-btn" id="btn-export">Export</button>
+    <button class="btn-bare footer-btn" id="btn-import">Import</button>
+    <input type="file" id="file-import" accept="application/json,.json" hidden>
+  </footer>
 </div>
 
 <dialog id="dlg-edit">
@@ -667,9 +724,12 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     <ol>
       <li>Open this page in <strong>Safari</strong> on your iPhone.</li>
       <li>Tap the <strong>Share</strong> button, then <strong>Add to Home Screen</strong>.</li>
-      <li>It gets its own icon and opens straight to a word.</li>
+      <li>It gets its own icon, opens fullscreen with no browser bars, and works with no signal.</li>
     </ol>
     <p>A web page can't draw a live iOS widget tile — only a native app can. This is the closest equivalent: one tap, and a word is in front of you.</p>
+
+    <h3>Where your words live</h3>
+    <p>On this device, in this browser — nothing is sent anywhere. That also means they don't follow you to another phone, and clearing website data erases them. <strong>Export</strong> writes them to a file you can keep; <strong>Import</strong> reads one back, merging by word rather than replacing.</p>
 
     <h3>Study mode</h3>
     <p>Turn on <strong>Study</strong> and the meaning stays hidden until you tap the card. Rotation pauses so you can think.</p>
@@ -689,11 +749,10 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
 
   var ROTATE_MS = 9000;
   var LS_KEY = "wachana.words.v1";
-  var COLLECTION = "words";
 
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  var db = null;              // set once claude.use("db") resolves
+  var storageOK = true;       // false when the browser refuses localStorage
   var words = [];             // newest first
   var deck = [];              // the rotating set (favourites filter applied)
   var cursor = 0;
@@ -717,6 +776,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     search: $("search"), filterFav: $("btn-filter-fav"),
     add: $("btn-add"), emptyAdd: $("btn-empty-add"),
     status: $("status"), statusText: $("status-text"),
+    exportBtn: $("btn-export"), importBtn: $("btn-import"), importFile: $("file-import"),
     dlg: $("dlg-edit"), form: $("form-word"), dlgTitle: $("dlg-title"),
     fEnglish: $("f-english"), fSinhala: $("f-sinhala"),
     fDefinition: $("f-definition"), fExample: $("f-example"),
@@ -737,36 +797,23 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
   }
 
   function writeLocal() {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(words)); } catch (e) { /* private mode */ }
-  }
-
-  function body(w) {
-    return {
-      english: w.english, sinhala: w.sinhala, definition: w.definition,
-      example: w.example, favorite: !!w.favorite, createdAt: w.createdAt
-    };
-  }
-
-  function persist(word) {
-    if (db) {
-      db.collection(COLLECTION).doc(word.id).set(body(word))
-        .catch(function (e) { note("Could not save — " + e.code); });
-    } else {
-      writeLocal();
-      render();
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(words));
+    } catch (e) {
+      storageOK = false;
+      note("Storage is full or blocked — use Export to keep your words", "local");
     }
+  }
+
+  function persist() {
+    writeLocal();
+    render();
   }
 
   function remove(id) {
     var i = words.findIndex(function (w) { return w.id === id; });
     if (i > -1) words.splice(i, 1);
-    if (db) {
-      db.collection(COLLECTION).doc(id).delete()
-        .catch(function (e) { note("Could not delete — " + e.code); });
-    } else {
-      writeLocal();
-    }
-    render();
+    persist();
   }
 
   function adopt(list) {
@@ -951,8 +998,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     var w = words.find(function (x) { return x.id === id; });
     if (!w) return;
     w.favorite = !w.favorite;
-    persist(w);
-    if (db) render();      // optimistic; the snapshot confirms
+    persist();
   }
 
   // ---------- rotation ----------
@@ -1009,10 +1055,87 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     w.definition = el.fDefinition.value.trim();
     w.example = el.fExample.value.trim();
 
-    persist(w);
-    if (db) render();
+    persist();
     if (!editingId) { rebuildDeck(); jumpTo(w.id); }
     return true;
+  }
+
+  // ---------- export / import ----------
+  //
+  // localStorage is the only copy on this device, and iOS can evict it, so
+  // there is always a way to get the words out. The export is a plain array
+  // using the same field names as the iOS app.
+
+  function exportWords() {
+    var payload = words.map(function (w) {
+      return {
+        id: w.id,
+        english: w.english,
+        definition: w.definition,
+        sinhala: w.sinhala,
+        example: w.example,
+        isFavorite: !!w.favorite,
+        favorite: !!w.favorite,
+        createdAt: new Date(w.createdAt || Date.now()).toISOString()
+      };
+    });
+    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "words-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function importWords(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var incoming = null;
+      try {
+        var parsed = JSON.parse(reader.result);
+        incoming = Array.isArray(parsed) ? parsed : parsed && parsed.words;
+      } catch (e) { /* handled below */ }
+
+      if (!Array.isArray(incoming)) {
+        note("That file is not a words export", "local");
+        return;
+      }
+
+      var byId = {};
+      words.forEach(function (w) { byId[w.id] = w; });
+
+      var added = 0, updated = 0;
+      incoming.forEach(function (raw) {
+        if (!raw || !raw.english) return;
+        var ms = typeof raw.createdAt === "number" ? raw.createdAt
+               : typeof raw.createdAt === "string" ? Date.parse(raw.createdAt) : NaN;
+        var w = {
+          id: raw.id || newId(),
+          english: String(raw.english),
+          sinhala: String(raw.sinhala || ""),
+          definition: String(raw.definition || ""),
+          example: String(raw.example || ""),
+          favorite: !!(raw.favorite || raw.isFavorite),
+          createdAt: isNaN(ms) ? Date.now() : ms
+        };
+        if (byId[w.id]) {
+          Object.keys(w).forEach(function (k) { byId[w.id][k] = w[k]; });
+          updated++;
+        } else {
+          words.push(w);
+          byId[w.id] = w;
+          added++;
+        }
+      });
+
+      writeLocal();
+      adopt(words);
+      note(added + " added, " + updated + " updated", "synced");
+    };
+    reader.readAsText(file);
   }
 
   // ---------- wiring ----------
@@ -1064,6 +1187,13 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     el.dlg.close();
   });
 
+  el.exportBtn.addEventListener("click", exportWords);
+  el.importBtn.addEventListener("click", function () { el.importFile.click(); });
+  el.importFile.addEventListener("change", function () {
+    if (el.importFile.files && el.importFile.files[0]) importWords(el.importFile.files[0]);
+    el.importFile.value = "";          // let the same file be picked again
+  });
+
   el.aboutOpen.addEventListener("click", function () { el.about.showModal(); });
   el.aboutClose.addEventListener("click", function () { el.about.close(); });
 
@@ -1084,63 +1214,29 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     if (document.hidden) stopTimer(); else restartTimer();
   });
 
-  // Helps iOS treat an added-to-home-screen copy as its own app.
-  ["apple-mobile-web-app-capable", "mobile-web-app-capable"].forEach(function (name) {
-    var m = document.createElement("meta");
-    m.name = name; m.content = "yes";
-    document.head.appendChild(m);
-  });
-  var t = document.createElement("meta");
-  t.name = "apple-mobile-web-app-title"; t.content = "Words";
-  document.head.appendChild(t);
-
   // ---------- start ----------
 
+  storageOK = (function () {
+    try {
+      localStorage.setItem(LS_KEY + ".probe", "1");
+      localStorage.removeItem(LS_KEY + ".probe");
+      return true;
+    } catch (e) { return false; }
+  })();
+
   adopt(readLocal());
-  note("Connecting…");
+  note(storageOK ? "Saved on this device" : "Private browsing — words will not be kept",
+       storageOK ? "synced" : "local");
 
-  // window.claude only exists inside the artifact viewer; anywhere else
-  // (a saved file, another host) the page runs on local storage alone.
-  var api = (typeof window.claude !== "undefined" && window.claude &&
-             typeof window.claude.use === "function") ? window.claude : null;
-
-  if (!api) {
-    note("Saved on this device only", "local");
-    return;
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () {
+        /* offline support is a bonus, not a requirement */
+      });
+    });
   }
 
-  api.use("db").then(function (store) {
-    if (!store) {
-      db = null;
-      note("Saved on this device only", "local");
-      return;
-    }
-    db = store;
-    db.collection(COLLECTION).orderBy("createdAt", "desc").onSnapshot(
-      function (snap) {
-        adopt(snap.docs.map(function (d) {
-          var v = d.data() || {};
-          return {
-            id: d.id,
-            english: v.english || "",
-            sinhala: v.sinhala || "",
-            definition: v.definition || "",
-            example: v.example || "",
-            favorite: !!v.favorite,
-            createdAt: typeof v.createdAt === "number" ? v.createdAt : 0
-          };
-        }));
-        note("Saved to your notebook", "synced");
-      },
-      function (err) {
-        db = null;
-        note("Offline — saving on this device", "local");
-        adopt(readLocal());
-      }
-    );
-  }).catch(function () {
-    db = null;
-    note("Saved on this device only", "local");
-  });
 })();
 </script>
+</body>
+</html>

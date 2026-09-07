@@ -8,12 +8,12 @@ Two versions live here, sharing the same five starter words:
 | | Path | Home screen |
 | --- | --- | --- |
 | **iOS app** | `EnglishWords.xcodeproj` | A real WidgetKit widget — small, medium, large, and Lock Screen |
-| **Web app** | [`web/index.html`](web/index.html) | Add to Home Screen: its own icon, opens straight to a word |
+| **Web app** | [`docs/`](docs/) | Installable PWA — real icon, fullscreen, works offline |
 
-The web version is a single file with no build step and no dependencies beyond
-Google Fonts. It needs no Apple Developer account and runs on any phone. The
-native version is the only one that can draw a live widget tile on the Home
-Screen — that is not something a web page is allowed to do.
+The web version has no build step, no framework and no npm dependencies. It
+needs no Apple Developer account and runs on any phone. The native version is
+the only one that can draw a live widget tile on the Home Screen — that is not
+something a web page is allowed to do.
 
 ---
 
@@ -125,18 +125,52 @@ font, which covers the script on iOS.
 
 # Web app
 
-Open `web/index.html` — no build, no server, no install. It stores words in the
-Claude Artifacts document store when running as a published artifact, and falls
-back to `localStorage` anywhere else, so it works opened as a plain file too.
+An installable PWA in [`docs/`](docs/) — no build, no framework, no npm.
+
+```
+docs/
+  index.html            the whole app: markup, CSS, JS
+  manifest.webmanifest  name, icons, standalone display
+  sw.js                 service worker — offline app shell + font cache
+  icons/                192 / 512 / maskable / apple-touch / favicon
+```
+
+## Publishing it
+
+GitHub Pages serves this straight from the repo. In **Settings › Pages**, set
+*Source* to **Deploy from a branch**, then branch `main` and folder `/docs`.
+It goes live at `https://<user>.github.io/words/` within a minute or so.
+
+To run it locally: `python3 -m http.server -d docs 8000`. Open it over `http://`
+rather than `file://` — service workers need an origin, so offline support is
+inactive on a `file://` page (everything else still works).
+
+## What it does differently
 
 Design follows the Sri Lankan school exercise book: feint blue rules, a red
 margin line down the left, blue-black ink, Sinhala set in Noto Serif/Sans
-Sinhala so the script renders properly instead of falling back to tofu.
+Sinhala. The fallback stack names **Sinhala Sangam MN**, which iOS and macOS
+already ship, so the script still renders correctly when Google Fonts can't
+load.
 
 Beyond the iOS feature set it adds **Study mode** — the meaning stays blurred
 until you tap the card, and rotation pauses so you get thinking time.
 
 Keyboard: `←` `→` move through the deck, `S` shuffles, `N` adds a word.
+
+## Where the words live
+
+`localStorage`, on the one device — nothing is sent anywhere, and there is no
+account. Two consequences worth knowing:
+
+- They do **not** sync between devices. Two phones are two notebooks.
+- iOS evicts site data for websites left unused for 7 days. Adding the app to
+  the Home Screen exempts it from that, which is the main reason to install it
+  rather than keep a tab open.
+
+**Export** writes a JSON file; **Import** reads one back, merging by word id
+instead of replacing. The export uses the same field names as the Swift model,
+so the two versions can exchange word lists.
 
 ## Ideas for next
 
