@@ -137,9 +137,17 @@ docs/
 
 ## Publishing it
 
-GitHub Pages serves this straight from the repo. In **Settings › Pages**, set
-*Source* to **Deploy from a branch**, then branch `main` and folder `/docs`.
-It goes live at `https://<user>.github.io/words/` within a minute or so.
+Everything inside `docs/` uses relative paths, so it works under any origin or
+sub-path — it only has to *be* the served root.
+
+**GitHub Pages** — Settings › Pages, *Source*: **Deploy from a branch**, branch
+`main`, folder **`/docs`**. Live at `https://<user>.github.io/words/`.
+
+**Vercel** — [`vercel.json`](vercel.json) sets `outputDirectory` to `docs`, so
+importing the repo needs no dashboard changes. (If you instead set *Root
+Directory* to `docs` in project settings, that works too — Vercel then reads
+config from inside `docs/` and ignores the root file.) Without one of the two,
+Vercel serves the repo root, which has no `index.html`, and every URL 404s.
 
 To run it locally: `python3 -m http.server -d docs 8000`. Open it over `http://`
 rather than `file://` — service workers need an origin, so offline support is
