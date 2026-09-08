@@ -209,6 +209,38 @@ closer to its opposite — four wrong out of five. Every public Lingva instance
 returned HTTP 500. dictionaryapi.dev carried an example for only two of six
 sampled words, which is why Tatoeba is there to top them up.
 
+## Syncing across devices
+
+Off by default. Open **Sync** in the footer and turn it on: the app generates a
+16-character code, and any device that enters the same code shares the same
+list. There is no account and no password — **the code is the key**, so anyone
+holding it can read the words.
+
+Every sync pulls the other side, merges, then pushes the result, so two devices
+converge no matter which one changed. Per word the newer edit wins; deletions
+carry a tombstone so a word deleted on one device is not handed back by the
+other, and a word re-added *after* a deletion survives. Tombstones are dropped
+after 30 days. Syncs run on load, ~1.5s after any change, and when the tab
+regains focus.
+
+### Setting it up
+
+Needs a free [Upstash](https://upstash.com) Redis database — sign in with
+GitHub, no card:
+
+1. Create a Redis database (any region; pick the one nearest you).
+2. Copy **`UPSTASH_REDIS_REST_URL`** and **`UPSTASH_REDIS_REST_TOKEN`** from its
+   REST API section.
+3. Add both in Vercel under *Settings › Environment Variables*, then redeploy.
+
+Without them [`api/sync.js`](api/sync.js) answers 503 and the app stays
+device-local — the Sync button reports it rather than failing silently. GitHub
+Pages cannot run the function at all, so sync is Vercel-only; Export/Import
+still works everywhere.
+
+Stored rows expire after a year untouched, and one list is capped at 5,000 words
+and 512 KB.
+
 ## Where the words live
 
 `localStorage`, on the one device — nothing is sent anywhere, and there is no

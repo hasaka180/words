@@ -602,6 +602,19 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
 .about-body p { margin: 0; }
 .about-body ol { margin: 0; padding-left: 1.15rem; display: grid; gap: .3rem; }
 .about-body strong { color: var(--ink); font-weight: 600; }
+.about-body .code {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  letter-spacing: .06em;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  padding: .6rem .7rem;
+  text-align: center;
+  user-select: all;
+  overflow-wrap: anywhere;
+}
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
@@ -696,6 +709,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
   <footer class="footer">
     <p class="status" id="status"><span class="dot"></span><span id="status-text">Loading…</span></p>
     <span class="footer-spacer"></span>
+    <button class="btn-bare footer-btn" id="btn-sync">Sync</button>
     <button class="btn-bare footer-btn" id="btn-export">Export</button>
     <button class="btn-bare footer-btn" id="btn-import">Import</button>
     <input type="file" id="file-import" accept="application/json,.json" hidden>
@@ -734,6 +748,35 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
   </form>
 </dialog>
 
+<dialog id="dlg-sync">
+  <div class="dlg-head"><h2>Sync across devices</h2></div>
+  <div class="about-body">
+    <div id="sync-off">
+      <p>Turn this on to keep the same words on your phone and your computer. You get a code — enter it on your other device and both stay in step.</p>
+      <p>There is no account and no password. <strong>Anyone with the code can read your words</strong>, so keep it to yourself.</p>
+    </div>
+
+    <div id="sync-on" hidden>
+      <h3>Your sync code</h3>
+      <p class="code" id="sync-code-text">—</p>
+      <p>Open this page on your other device, tap <strong>Sync</strong>, and enter this code.</p>
+    </div>
+
+    <h3 id="sync-enter-head">Use a code from another device</h3>
+    <div class="field">
+      <label for="f-sync-code">Sync code</label>
+      <input id="f-sync-code" autocomplete="off" spellcheck="false" placeholder="k7m2-9xqp-4ntw-3fbd">
+      <span class="hint" id="sync-msg"></span>
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button type="button" class="btn btn-danger" id="btn-sync-off" hidden>Turn off</button>
+    <span class="spacer"></span>
+    <button type="button" class="btn" id="btn-sync-close">Close</button>
+    <button type="button" class="btn btn-primary" id="btn-sync-start">Turn on sync</button>
+  </div>
+</dialog>
+
 <dialog id="dlg-about">
   <div class="dlg-head"><h2>About this notebook</h2></div>
   <div class="about-body">
@@ -748,7 +791,10 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     <p>A web page can't draw a live iOS widget tile — only a native app can. This is the closest equivalent: one tap, and a word is in front of you.</p>
 
     <h3>Where your words live</h3>
-    <p>On this device, in this browser — nothing is sent anywhere. That also means they don't follow you to another phone, and clearing website data erases them. <strong>Export</strong> writes them to a file you can keep; <strong>Import</strong> reads one back, merging by word rather than replacing.</p>
+    <p>On this device, in this browser. Clearing website data erases them, so <strong>Export</strong> writes them to a file you can keep and <strong>Import</strong> reads one back, merging by word rather than replacing.</p>
+
+    <h3>Two devices, one notebook</h3>
+    <p>Tap <strong>Sync</strong> at the bottom and turn it on. You get a code — enter it on your other device and the two stay in step, whichever one you add to. Anyone with the code can read your words, so keep it to yourself.</p>
 
     <h3>Filling a word in</h3>
     <p>Type the English word and the definition, Sinhala meaning and example sentences are looked up for you. Suggested fields are tinted — <strong>check them before saving</strong>, and edit anything that reads wrong. A suggestion never overwrites text you typed yourself.</p>
@@ -772,11 +818,14 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
 
   var ROTATE_MS = 9000;
   var LS_KEY = "wachana.words.v1";
+  var SYNC_KEY = "wachana.sync.code";
+  var TOMBSTONE_MS = 30 * 24 * 60 * 60 * 1000;   // forget deletions after a month
 
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   var storageOK = true;       // false when the browser refuses localStorage
   var words = [];             // newest first
+  var deleted = {};           // id -> when it was deleted, so a delete survives a merge
   var deck = [];              // the rotating set (favourites filter applied)
   var cursor = 0;
   var favOnly = false;
@@ -800,6 +849,11 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     add: $("btn-add"), emptyAdd: $("btn-empty-add"),
     status: $("status"), statusText: $("status-text"),
     exportBtn: $("btn-export"), importBtn: $("btn-import"), importFile: $("file-import"),
+    syncBtn: $("btn-sync"), dlgSync: $("dlg-sync"),
+    syncOff: $("sync-off"), syncOn: $("sync-on"), syncCodeText: $("sync-code-text"),
+    syncInput: $("f-sync-code"), syncMsg: $("sync-msg"),
+    syncStart: $("btn-sync-start"), syncStop: $("btn-sync-off"),
+    syncClose: $("btn-sync-close"), syncEnterHead: $("sync-enter-head"),
     dlg: $("dlg-edit"), form: $("form-word"), dlgTitle: $("dlg-title"),
     fEnglish: $("f-english"), fSinhala: $("f-sinhala"),
     fDefinition: $("f-definition"), fExample: $("f-example"),
@@ -816,13 +870,20 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
   }
 
   function readLocal() {
-    try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; }
-    catch (e) { return []; }
+    try {
+      var raw = JSON.parse(localStorage.getItem(LS_KEY));
+      // v1 stored a bare array; keep reading it so nobody loses their words.
+      if (Array.isArray(raw)) return { words: raw, deleted: {} };
+      if (raw && Array.isArray(raw.words)) {
+        return { words: raw.words, deleted: raw.deleted || {} };
+      }
+    } catch (e) { /* fall through */ }
+    return { words: [], deleted: {} };
   }
 
   function writeLocal() {
     try {
-      localStorage.setItem(LS_KEY, JSON.stringify(words));
+      localStorage.setItem(LS_KEY, JSON.stringify({ words: words, deleted: deleted }));
     } catch (e) {
       storageOK = false;
       note("Storage is full or blocked — use Export to keep your words", "local");
@@ -832,17 +893,58 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
   function persist() {
     writeLocal();
     render();
+    schedulePush();
   }
 
   function remove(id) {
     var i = words.findIndex(function (w) { return w.id === id; });
     if (i > -1) words.splice(i, 1);
+    // Remember the deletion, or the other device would hand the word back.
+    deleted[id] = Date.now();
     persist();
   }
 
-  function adopt(list) {
+  function adopt(doc) {
+    var list = Array.isArray(doc) ? doc : (doc.words || []);
+    if (!Array.isArray(doc)) deleted = doc.deleted || deleted;
     words = list.slice().sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
     render();
+  }
+
+  /* Combine two copies of the notebook. Per word the newer edit wins; a
+     deletion wins only over versions older than the deletion itself, so
+     re-adding a word on one device is not silently undone by the other. */
+  function mergeDocs(a, b) {
+    var byId = {};
+    [a, b].forEach(function (doc) {
+      (doc.words || []).forEach(function (w) {
+        if (!w || !w.id) return;
+        var cur = byId[w.id];
+        if (!cur || (w.updatedAt || 0) > (cur.updatedAt || 0)) byId[w.id] = w;
+      });
+    });
+
+    var tombs = {};
+    [a, b].forEach(function (doc) {
+      var d = doc.deleted || {};
+      Object.keys(d).forEach(function (id) {
+        if (!tombs[id] || d[id] > tombs[id]) tombs[id] = d[id];
+      });
+    });
+
+    var out = [];
+    Object.keys(byId).forEach(function (id) {
+      var w = byId[id];
+      if (tombs[id] && tombs[id] >= (w.updatedAt || 0)) return;
+      out.push(w);
+    });
+
+    var cutoff = Date.now() - TOMBSTONE_MS;
+    Object.keys(tombs).forEach(function (id) {
+      if (tombs[id] < cutoff) delete tombs[id];
+    });
+
+    return { words: out, deleted: tombs };
   }
 
   // ---------- deck + rendering ----------
@@ -1022,6 +1124,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     var w = words.find(function (x) { return x.id === id; });
     if (!w) return;
     w.favorite = !w.favorite;
+    w.updatedAt = Date.now();
     persist();
   }
 
@@ -1083,6 +1186,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     w.sinhala = el.fSinhala.value.trim();
     w.definition = el.fDefinition.value.trim();
     w.example = el.fExample.value.trim();
+    w.updatedAt = Date.now();
 
     persist();
     if (!editingId) { rebuildDeck(); jumpTo(w.id); }
@@ -1247,6 +1351,94 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
       .then(function (d) { return d.examples || []; });
   }
 
+  // ---------- sync ----------
+  //
+  // No accounts: a long random code IS the key. Any device holding it reads and
+  // writes the same list. Every sync pulls the other side, merges, then pushes
+  // the result, so the two devices converge whichever one changed.
+
+  var syncCode = null;
+  var pushTimer = null;
+  var syncing = false;
+
+  function readSyncCode() {
+    try { return localStorage.getItem(SYNC_KEY) || null; } catch (e) { return null; }
+  }
+
+  function writeSyncCode(code) {
+    try {
+      if (code) localStorage.setItem(SYNC_KEY, code);
+      else localStorage.removeItem(SYNC_KEY);
+    } catch (e) { /* private browsing */ }
+    syncCode = code;
+  }
+
+  function makeSyncCode() {
+    // No l/1/o/0 — this gets read off one screen and typed into another.
+    var alphabet = "abcdefghijkmnpqrstuvwxyz23456789";
+    var out = "";
+    var bytes = new Uint8Array(16);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+    else for (var j = 0; j < 16; j++) bytes[j] = Math.floor(Math.random() * 256);
+    for (var i = 0; i < 16; i++) out += alphabet[bytes[i] % alphabet.length];
+    return out;
+  }
+
+  function prettyCode(code) {
+    return code ? code.replace(/(.{4})(?=.)/g, "$1-") : "";
+  }
+
+  function cleanCode(text) {
+    return String(text || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16);
+  }
+
+  function schedulePush() {
+    if (!syncCode) return;
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(function () { syncNow(); }, 1500);
+  }
+
+  function syncNow(quiet) {
+    if (!syncCode || syncing) return;
+    if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; }
+
+    syncing = true;
+    if (!quiet) note("Syncing…", "synced");
+
+    var url = "api/sync?code=" + encodeURIComponent(syncCode);
+
+    fetch(url, { headers: { "Accept": "application/json" } })
+      .then(function (r) {
+        var json = (r.headers.get("content-type") || "").indexOf("json") > -1;
+        if (!json) throw new Error("Sync isn't available on this address");
+        return r.json().then(function (d) {
+          if (!r.ok) throw new Error(d.error || "Sync failed");
+          return d;
+        });
+      })
+      .then(function (remote) {
+        var merged = mergeDocs({ words: words, deleted: deleted }, remote);
+        deleted = merged.deleted;
+        adopt({ words: merged.words, deleted: merged.deleted });
+        writeLocal();
+
+        return fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ words: words, deleted: deleted })
+        }).then(function (r) {
+          if (!r.ok) throw new Error("Could not upload");
+        });
+      })
+      .then(function () {
+        note("Synced · " + prettyCode(syncCode), "synced");
+      })
+      .catch(function (e) {
+        note((e && e.message) || "Sync failed", "local");
+      })
+      .then(function () { syncing = false; });
+  }
+
   // ---------- export / import ----------
   //
   // localStorage is the only copy on this device, and iOS can evict it, so
@@ -1263,7 +1455,8 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
         example: w.example,
         isFavorite: !!w.favorite,
         favorite: !!w.favorite,
-        createdAt: new Date(w.createdAt || Date.now()).toISOString()
+        createdAt: new Date(w.createdAt || Date.now()).toISOString(),
+        updatedAt: new Date(w.updatedAt || w.createdAt || Date.now()).toISOString()
       };
     });
     var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -1306,7 +1499,8 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
           definition: String(raw.definition || ""),
           example: String(raw.example || ""),
           favorite: !!(raw.favorite || raw.isFavorite),
-          createdAt: isNaN(ms) ? Date.now() : ms
+          createdAt: isNaN(ms) ? Date.now() : ms,
+          updatedAt: Date.now()
         };
         if (byId[w.id]) {
           Object.keys(w).forEach(function (k) { byId[w.id][k] = w[k]; });
@@ -1319,8 +1513,9 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
       });
 
       writeLocal();
-      adopt(words);
+      adopt({ words: words, deleted: deleted });
       note(added + " added, " + updated + " updated", "synced");
+      schedulePush();
     };
     reader.readAsText(file);
   }
@@ -1382,6 +1577,52 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     f.addEventListener("input", function () { f.classList.remove("is-suggested"); });
   });
 
+  function renderSyncDialog() {
+    var on = !!syncCode;
+    el.syncOn.hidden = !on;
+    el.syncOff.hidden = on;
+    el.syncStop.hidden = !on;
+    el.syncStart.textContent = on ? "Sync now" : "Turn on sync";
+    el.syncCodeText.textContent = prettyCode(syncCode);
+    el.syncEnterHead.textContent = on ? "Switch to a different code" : "Use a code from another device";
+  }
+
+  el.syncBtn.addEventListener("click", function () {
+    el.syncInput.value = "";
+    el.syncMsg.textContent = "";
+    renderSyncDialog();
+    el.dlgSync.showModal();
+  });
+
+  el.syncClose.addEventListener("click", function () { el.dlgSync.close(); });
+
+  el.syncStart.addEventListener("click", function () {
+    var typed = cleanCode(el.syncInput.value);
+
+    if (typed) {
+      if (typed.length !== 16) {
+        el.syncMsg.textContent = "That code is not complete — it is 16 letters and numbers.";
+        return;
+      }
+      writeSyncCode(typed);
+    } else if (!syncCode) {
+      writeSyncCode(makeSyncCode());
+    }
+
+    renderSyncDialog();
+    el.syncInput.value = "";
+    el.syncMsg.textContent = "";
+    el.dlgSync.close();
+    syncNow();
+  });
+
+  el.syncStop.addEventListener("click", function () {
+    writeSyncCode(null);
+    renderSyncDialog();
+    el.dlgSync.close();
+    note("Saved on this device", "synced");
+  });
+
   el.exportBtn.addEventListener("click", exportWords);
   el.importBtn.addEventListener("click", function () { el.importFile.click(); });
   el.importFile.addEventListener("change", function () {
@@ -1406,7 +1647,10 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
 
   // Pause rotation while the tab is hidden.
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) stopTimer(); else restartTimer();
+    if (document.hidden) { stopTimer(); return; }
+    restartTimer();
+    // Coming back to the tab is the moment the other device's edits matter.
+    syncNow(true);
   });
 
   // ---------- start ----------
@@ -1420,8 +1664,15 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
   })();
 
   adopt(readLocal());
-  note(storageOK ? "Saved on this device" : "Private browsing — words will not be kept",
-       storageOK ? "synced" : "local");
+  syncCode = readSyncCode();
+
+  if (syncCode) {
+    note("Syncing…", "synced");
+    syncNow(true);
+  } else {
+    note(storageOK ? "Saved on this device" : "Private browsing — words will not be kept",
+         storageOK ? "synced" : "local");
+  }
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function () {
