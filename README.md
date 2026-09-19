@@ -186,6 +186,19 @@ service never holds up the others:
 The status line under the word field says what was found and what to add by
 hand.
 
+### Words saved before lookup worked
+
+When saved words are missing a Sinhala meaning, explanation or examples, a
+banner above the list offers to **fill them in**. It looks each word up and
+fills *empty fields only* — nothing typed by hand is replaced — then syncs.
+Words are looked up one at a time with a short pause, so Google's endpoint
+doesn't read the run as a flood; pressing the button again stops it. Each word
+is marked as tried, so one that no source knows doesn't keep the banner up.
+
+To replace text that's already there, open the word and use **Look up again**:
+it overwrites the fields with fresh suggestions, and nothing changes until you
+press Save.
+
 ### Picking the simplest explanation
 
 Dictionaries list many senses. The app takes the first *everyday* one: a

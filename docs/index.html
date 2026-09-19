@@ -566,6 +566,31 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
 }
 
 .lookup { display: flex; align-items: center; gap: .4rem; min-height: 1.1rem; }
+.lookup-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
+.relookup {
+  font-family: var(--font-mono);
+  font-size: .66rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--accent);
+  padding: .2rem .4rem;
+  margin-left: auto;
+}
+
+/* Saved words with an empty meaning, explanation or example. */
+.gaps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  padding: .7rem .8rem .7rem 1rem;
+  border-radius: 9px;
+  background: var(--accent-wash);
+  color: var(--ink);
+  font-size: .9rem;
+}
+.gaps p { margin: 0; }
+.gaps .btn { flex: none; }
 .lookup.is-busy { color: var(--accent); }
 .lookup .spin {
   width: .6rem; height: .6rem;
@@ -704,6 +729,11 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     </button>
   </div>
 
+  <div class="gaps" id="gaps" hidden>
+    <p id="gaps-text"></p>
+    <button class="btn" id="btn-fill-gaps">Fill them in</button>
+  </div>
+
   <ol class="list" id="list"></ol>
 
   <footer class="footer">
@@ -723,7 +753,10 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
       <div class="field">
         <label for="f-english">English word</label>
         <input id="f-english" name="english" required autocomplete="off" spellcheck="false" placeholder="Resilient">
-        <span class="hint lookup" id="lookup-status" hidden></span>
+        <span class="lookup-row">
+          <span class="hint lookup" id="lookup-status" hidden></span>
+          <button type="button" class="btn-bare relookup" id="btn-relookup" hidden>Look up again</button>
+        </span>
       </div>
       <div class="field">
         <label for="f-sinhala">Sinhala meaning</label>
@@ -857,7 +890,8 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     dlg: $("dlg-edit"), form: $("form-word"), dlgTitle: $("dlg-title"),
     fEnglish: $("f-english"), fSinhala: $("f-sinhala"),
     fDefinition: $("f-definition"), fExample: $("f-example"),
-    lookupStatus: $("lookup-status"),
+    lookupStatus: $("lookup-status"), relookup: $("btn-relookup"),
+    gaps: $("gaps"), gapsText: $("gaps-text"), fillGaps: $("btn-fill-gaps"),
     del: $("btn-delete"), cancel: $("btn-cancel"),
     about: $("dlg-about"), aboutOpen: $("btn-about"), aboutClose: $("btn-about-close")
   };
@@ -974,6 +1008,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     renderCard();
     renderList();
     renderMeta();
+    renderGaps();
   }
 
   function renderMeta() {
@@ -1163,6 +1198,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     if (lookupAbort) { lookupAbort.abort(); lookupAbort = null; }
     clearSuggestions();
     lookupStatus("");
+    el.relookup.hidden = !w;
 
     el.dlg.showModal();
     el.fEnglish.focus();
@@ -1220,8 +1256,8 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     return field.value.trim() === "" || field.classList.contains("is-suggested");
   }
 
-  function fill(field, value) {
-    if (!value || !canFill(field)) return false;
+  function fill(field, value, replace) {
+    if (!value || !(replace || canFill(field))) return false;
     field.value = value;
     field.classList.add("is-suggested");
     return true;
@@ -1270,7 +1306,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     return r.json();
   }
 
-  function runLookup(word) {
+  function runLookup(word, replace) {
     if (lookupAbort) lookupAbort.abort();
     lookupAbort = new AbortController();
     var signal = lookupAbort.signal;
@@ -1286,14 +1322,14 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
       if (!current()) return;
       lookedUp = word;
       found.definition = true;
-      fill(el.fDefinition, text);
+      fill(el.fDefinition, text, replace);
     });
 
     var pSinhala = fetchSinhala(word, signal).then(function (text) {
       if (!current()) return;
       lookedUp = word;
       found.sinhala = true;
-      fill(el.fSinhala, text);
+      fill(el.fSinhala, text, replace);
     });
 
     var pExamples = Promise.allSettled([
@@ -1307,7 +1343,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
       if (!picked.length) return;
       lookedUp = word;
       found.examples = true;
-      fill(el.fExample, picked.join("\n"));
+      fill(el.fExample, picked.join("\n"), replace);
     });
 
     Promise.allSettled([pDefinition, pSinhala, pExamples]).then(function () {
@@ -1499,6 +1535,107 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
       throw new Error("no translation");
     }
     return text;
+  }
+
+  // ---------- filling in words already saved ----------
+  //
+  // Words saved before lookup worked are missing their meaning, explanation or
+  // examples. This looks each one up and fills EMPTY fields only — text the
+  // person wrote is never replaced here. A word is marked as tried either way,
+  // so one that no source knows doesn't keep the banner up forever.
+
+  var filling = null;   // AbortController while a run is in progress
+
+  function missingFields(w) {
+    return !w.sinhala || !w.definition || !w.example;
+  }
+
+  function needsFilling(w) {
+    return !w.filledAt && missingFields(w);
+  }
+
+  function renderGaps() {
+    if (filling) return;   // the progress line owns the banner during a run
+    var n = words.filter(needsFilling).length;
+    el.gaps.hidden = n === 0;
+    if (!n) return;
+    el.gapsText.textContent = n === 1
+      ? "1 saved word is missing its Sinhala meaning, explanation or examples."
+      : n + " saved words are missing a Sinhala meaning, explanation or examples.";
+    el.fillGaps.textContent = "Fill them in";
+  }
+
+  // Every source for one word; never rejects.
+  function lookupEverything(word, signal) {
+    return Promise.allSettled([
+      fetchDefinition(word, signal),
+      fetchSinhala(word, signal),
+      Promise.allSettled([fetchTatoeba(word, signal), wiktionaryExamples(word, signal)])
+    ]).then(function (r) {
+      var pool = [];
+      if (r[2].status === "fulfilled") {
+        r[2].value.forEach(function (x) { if (x.status === "fulfilled") pool = pool.concat(x.value); });
+      }
+      return {
+        definition: r[0].status === "fulfilled" ? r[0].value : "",
+        sinhala: r[1].status === "fulfilled" ? r[1].value : "",
+        examples: pickExamples(pool)
+      };
+    });
+  }
+
+  function fillGaps() {
+    if (filling) { filling.abort(); return; }   // pressing again stops the run
+
+    // Ids, not objects: a sync partway through replaces the word objects.
+    var todo = words.filter(needsFilling).map(function (w) { return w.id; });
+    if (!todo.length) return;
+
+    filling = new AbortController();
+    var signal = filling.signal;
+    var improved = 0;
+    el.fillGaps.textContent = "Stop";
+
+    function step(i) {
+      if (signal.aborted || i >= todo.length) { finish(); return; }
+      var w = words.find(function (x) { return x.id === todo[i]; });
+      if (!w) { step(i + 1); return; }
+
+      el.gapsText.textContent = "Looking up “" + w.english + "” — " + (i + 1) + " of " + todo.length + "…";
+
+      lookupEverything(w.english, signal).then(function (got) {
+        if (signal.aborted) { finish(); return; }
+        w = words.find(function (x) { return x.id === todo[i]; }) || w;
+
+        var changed = false;
+        if (!w.sinhala && got.sinhala) { w.sinhala = got.sinhala; changed = true; }
+        if (!w.definition && got.definition) { w.definition = got.definition; changed = true; }
+        if (!w.example && got.examples.length) { w.example = got.examples.join("\n"); changed = true; }
+        if (changed) improved++;
+
+        w.filledAt = Date.now();
+        w.updatedAt = Date.now();
+        writeLocal();
+        render();
+
+        // A short pause between words, so Google's endpoint doesn't read the
+        // run as a flood and start refusing.
+        setTimeout(function () { step(i + 1); }, 400);
+      });
+    }
+
+    function finish() {
+      var stopped = signal.aborted;
+      filling = null;
+      persist();   // save, redraw, and send to the other device
+      var left = words.filter(missingFields).length;
+      var msg = (stopped ? "Stopped · " : "") +
+                improved + (improved === 1 ? " word" : " words") + " filled in";
+      if (!stopped && left) msg += " · " + left + " still incomplete — add those by hand";
+      note(msg, "synced");
+    }
+
+    step(0);
   }
 
   // ---------- sync ----------
@@ -1719,7 +1856,21 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     el.dlg.close();
   });
 
-  el.fEnglish.addEventListener("input", scheduleLookup);
+  el.fEnglish.addEventListener("input", function () {
+    el.relookup.hidden = el.fEnglish.value.trim().length < 2;
+    scheduleLookup();
+  });
+
+  // Replaces what's in the fields — the person asked for it, and still has to
+  // press Save for it to stick.
+  el.relookup.addEventListener("click", function () {
+    var word = el.fEnglish.value.trim();
+    if (word.length < 2) return;
+    lookedUp = "";
+    runLookup(word, true);
+  });
+
+  el.fillGaps.addEventListener("click", fillGaps);
 
   // The moment they edit a suggested field it becomes theirs, and lookup
   // stops touching it.
