@@ -1316,25 +1316,28 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     }
 
     var found = { definition: false, sinhala: false, examples: false };
+    var sinhalaSource = "";
+    var dictWord = dictionaryForm(word);
     lookupStatus("Looking up " + word + "…", true);
 
-    var pDefinition = fetchDefinition(word, signal).then(function (text) {
+    var pDefinition = fetchDefinition(dictWord, signal).then(function (text) {
       if (!current()) return;
       lookedUp = word;
       found.definition = true;
       fill(el.fDefinition, text, replace);
     });
 
-    var pSinhala = fetchSinhala(word, signal).then(function (text) {
+    var pSinhala = findSinhala(word, signal).then(function (got) {
       if (!current()) return;
       lookedUp = word;
       found.sinhala = true;
-      fill(el.fSinhala, text, replace);
+      sinhalaSource = got.source;
+      fill(el.fSinhala, got.text, replace);
     });
 
     var pExamples = Promise.allSettled([
       fetchTatoeba(word, signal),
-      wiktionaryExamples(word, signal)
+      wiktionaryExamples(dictWord, signal)
     ]).then(function (r) {
       if (!current()) return;
       var pool = [];
@@ -1353,8 +1356,12 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
       if (!found.definition) missing.push("explanation");
       if (!found.examples) missing.push("examples");
 
+      var machinePhrase = sinhalaSource === "meaning" || sinhalaSource === "literal";
+
       if (missing.length === 3) lookupStatus("Couldn't find that word — type it in yourself");
+      else if (machinePhrase) lookupStatus("Phrase — the Sinhala is a machine translation and may be word for word. Check it.");
       else if (missing.length) lookupStatus("No " + missing.join(" or ") + " found — add it yourself");
+      else if (sinhalaSource === "list") lookupStatus("Sinhala from the checked phrase list — review the rest");
       else lookupStatus("Suggested — check it before saving");
     });
   }
@@ -1368,13 +1375,18 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
   // (psychology) — marks a specialised sense, which is skipped. Skipping every
   // tagged sense instead once turned "set" into "to hunt game with a setter".
   var GRAMMAR_TAG = /^(transitive|intransitive|ambitransitive|ergative|reflexive|countable|uncountable|usually plural|in the plural|plural only|not comparable|comparable|stative|copulative|auxiliary|modal|attributive|predicative|postpositive|of a person|of people|of things)$/i;
+  // For a phrase these tags describe the ordinary meaning, not a specialised
+  // one. Accepting them for single words let "light" pick its physics sense.
+  var PHRASE_TAG = /^(idiomatic|informal|colloquial|figurative|figuratively|by extension)$/i;
 
-  function everydaySense(text) {
+  function everydaySense(text, phrase) {
     var m = text.match(/^\(([^)]*)\)\s*/);
     if (!m) return text;
     var tags = m[1].split(/\s*,\s*/);
-    var grammarOnly = tags.every(function (t) { return GRAMMAR_TAG.test(t); });
-    return grammarOnly ? text.slice(m[0].length) : null;
+    var ordinary = tags.every(function (t) {
+      return GRAMMAR_TAG.test(t) || (phrase && PHRASE_TAG.test(t));
+    });
+    return ordinary ? text.slice(m[0].length) : null;
   }
 
   // Long definitions keep their core and their short synonyms:
@@ -1392,19 +1404,35 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     return (out.length < text.length ? out : text).replace(/[.;,\s]*$/, "") + ".";
   }
 
-  function simplest(defs) {
+  function simplest(defs, phrase) {
     var clean = defs.map(function (d) {
-      return String(d || "").replace(/^[^\t]*\t/, "").trim();
+      var t = String(d || "").replace(/^[^\t]*\t/, "").trim();
+      // Some phrase entries are encyclopedia sentences — keep what they quote.
+      var quoted = t.match(/\bmeaning\s+["\u201c]([^"\u201d]+)["\u201d]/i);
+      return quoted ? quoted[1].replace(/^./, function (c) { return c.toUpperCase(); }) : t;
     }).filter(Boolean);
-    var everyday = clean.map(everydaySense).filter(Boolean);
+    var everyday = clean.map(function (d) { return everydaySense(d, phrase); }).filter(Boolean);
     var pick = (everyday[0] || clean[0] || "")
       .replace(/^\([^)]*\)\s*/, "")
       .replace(/\s*\([^)]*\)\s*$/, "")
       .trim();
-    return pick ? shorten(pick) : "";
+    return pick ? shorten(pick).replace(/([!?])[.;]+/g, "$1").replace(/;\s*([.!?]?)$/, "$1") : "";
   }
 
   function fetchDefinition(word, signal) {
+    if (isPhrase(word)) {
+      return wiktionaryDefinition(word, signal).catch(function (e) {
+        if (signal.aborted) throw e;
+        return datamuseDefinition(word, signal);
+      });
+    }
+    return datamuseDefinition(word, signal).catch(function (e) {
+      if (signal.aborted) throw e;
+      return wiktionaryDefinition(word, signal);
+    });
+  }
+
+  function datamuseDefinition(word, signal) {
     var url = "https://api.datamuse.com/words?md=d&max=1&sp=" + encodeURIComponent(word.toLowerCase());
     return timed(url, signal)
       .then(jsonOrThrow)
@@ -1413,13 +1441,9 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
         if (!hit || String(hit.word).toLowerCase() !== word.toLowerCase() || !hit.defs) {
           throw new Error("no entry");
         }
-        var text = simplest(hit.defs);
+        var text = simplest(hit.defs, isPhrase(word));
         if (!text) throw new Error("no entry");
         return text;
-      })
-      .catch(function (e) {
-        if (signal.aborted) throw e;
-        return wiktionaryDefinition(word, signal);
       });
   }
 
@@ -1430,7 +1454,8 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
   function wiktionary(word, signal) {
     var key = word.toLowerCase();
     if (!wiktionaryCache[key]) {
-      var url = "https://en.wiktionary.org/api/rest_v1/page/definition/" + encodeURIComponent(key);
+      var url = "https://en.wiktionary.org/api/rest_v1/page/definition/" +
+                encodeURIComponent(key.replace(/ /g, "_"));
       wiktionaryCache[key] = timed(url, signal)
         .then(jsonOrThrow)
         .then(function (d) { return (d && d.en) || []; });
@@ -1452,7 +1477,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
         if (/^(symbol|proper noun|letter|prefix|suffix)$/i.test(p.partOfSpeech || "")) return;
         (p.definitions || []).forEach(function (d) { defs.push("\t" + stripTags(d.definition)); });
       });
-      var text = simplest(defs);
+      var text = simplest(defs, isPhrase(word));
       if (!text) throw new Error("no entry");
       return text;
     });
@@ -1501,7 +1526,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
   // Google's Chrome dictionary endpoint: no key, CORS open, and in testing it
   // answered every word in a row where translate.googleapis.com had started
   // refusing with an HTML "Sorry..." page. That one stays as the fallback.
-  function fetchSinhala(word, signal) {
+  function googleSinhala(word, signal) {
     var url = "https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=en&tl=si&q=" +
               encodeURIComponent(word);
     return timed(url, signal)
@@ -1526,6 +1551,97 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
         var chunks = (d && d[0]) || [];
         return usableSinhala(chunks.map(function (c) { return (c && c[0]) || ""; }).join(""), word);
       });
+  }
+
+  // ----- idioms -----
+  //
+  // Machine translation renders idioms word for word: "hit the sack" comes
+  // back as "hit a sack", "cut some slack" as "reduce a little". So a list of
+  // phrases with checked Sinhala (idioms.json) is consulted first.
+  //
+  // Phrases are matched loosely: pronouns fold to someone / one's, and a
+  // "skeleton" with them removed also matches — so "cut me some slack" and
+  // "cut some slack" both find "cut someone some slack".
+
+  var idiomIndex = null;   // normalised phrase -> { si, key }
+
+  function phraseKey(text) {
+    return String(text || "").toLowerCase()
+      .replace(/[‘’]/g, "'")
+      .replace(/[^a-z' ]+/g, " ")
+      .replace(/\b(me|him|her|them|us|you|somebody|sb|someone)\b/g, "someone")
+      .replace(/\b(my|his|their|our|your|one's|someone's|somebody's)\b/g, "one's")
+      .replace(/\bsomeone's\b/g, "one's")
+      .replace(/\s+/g, " ").trim();
+  }
+
+  function phraseSkeleton(key) {
+    return key.replace(/\b(someone|one's|something|oneself)\b/g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  function loadIdioms() {
+    return fetch("idioms.json")
+      .then(function (r) { return r.ok ? r.json() : { phrases: {} }; })
+      .catch(function () { return { phrases: {} }; })
+      .then(function (d) {
+        var index = {};
+        Object.keys(d.phrases || {}).forEach(function (key) {
+          var entry = { si: d.phrases[key], key: key };
+          var k = phraseKey(key);
+          index[k] = entry;
+          var bare = phraseSkeleton(k);
+          if (bare && !index[bare]) index[bare] = entry;
+        });
+        idiomIndex = index;
+        return index;
+      });
+  }
+
+  function findIdiom(word) {
+    if (!idiomIndex) return null;
+    var k = phraseKey(word);
+    return idiomIndex[k] || idiomIndex[phraseSkeleton(k)] || null;
+  }
+
+  function isPhrase(word) {
+    return /\s/.test(String(word).trim());
+  }
+
+  // Where the Sinhala comes from, in order of trust:
+  //   "list"     the checked phrase list
+  //   "google"   Google, for a single word — usually right
+  //   "meaning"  a phrase not on the list: Google on its short explanation,
+  //              which in testing got every short one right ("to go to bed"),
+  //              where translating the phrase itself got most wrong
+  //   "literal"  a phrase with no short explanation: Google on the phrase
+  // The last two are always flagged for checking.
+  function findSinhala(word, signal) {
+    var hit = findIdiom(word);
+    if (hit) return Promise.resolve({ text: hit.si, source: "list" });
+
+    if (!isPhrase(word)) {
+      return googleSinhala(word, signal).then(function (t) { return { text: t, source: "google" }; });
+    }
+
+    return fetchDefinition(word, signal)
+      .catch(function () { return ""; })
+      .then(function (meaning) {
+        var plain = String(meaning || "").split(/;/)[0].replace(/\([^)]*\)/g, "").replace(/\.$/, "").trim();
+        if (plain && plain.split(/\s+/).length <= 8) {
+          return googleSinhala(plain, signal).then(function (t) { return { text: t, source: "meaning" }; });
+        }
+        throw new Error("no short meaning");
+      })
+      .catch(function (e) {
+        if (signal.aborted) throw e;
+        return googleSinhala(word, signal).then(function (t) { return { text: t, source: "literal" }; });
+      });
+  }
+
+  // The dictionary files idioms under their full form; use it when we know it.
+  function dictionaryForm(word) {
+    var hit = findIdiom(word);
+    return hit ? hit.key : word;
   }
 
   // A word it can't translate comes back unchanged — that's a miss, not a meaning.
@@ -1567,10 +1683,11 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
 
   // Every source for one word; never rejects.
   function lookupEverything(word, signal) {
+    var dictWord = dictionaryForm(word);
     return Promise.allSettled([
-      fetchDefinition(word, signal),
-      fetchSinhala(word, signal),
-      Promise.allSettled([fetchTatoeba(word, signal), wiktionaryExamples(word, signal)])
+      fetchDefinition(dictWord, signal),
+      findSinhala(word, signal),
+      Promise.allSettled([fetchTatoeba(word, signal), wiktionaryExamples(dictWord, signal)])
     ]).then(function (r) {
       var pool = [];
       if (r[2].status === "fulfilled") {
@@ -1578,7 +1695,8 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
       }
       return {
         definition: r[0].status === "fulfilled" ? r[0].value : "",
-        sinhala: r[1].status === "fulfilled" ? r[1].value : "",
+        sinhala: r[1].status === "fulfilled" ? r[1].value.text : "",
+        sinhalaSource: r[1].status === "fulfilled" ? r[1].value.source : "",
         examples: pickExamples(pool)
       };
     });
@@ -1594,6 +1712,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     filling = new AbortController();
     var signal = filling.signal;
     var improved = 0;
+    var toCheck = [];   // phrases whose Sinhala is a machine translation
     el.fillGaps.textContent = "Stop";
 
     function step(i) {
@@ -1608,7 +1727,11 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
         w = words.find(function (x) { return x.id === todo[i]; }) || w;
 
         var changed = false;
-        if (!w.sinhala && got.sinhala) { w.sinhala = got.sinhala; changed = true; }
+        if (!w.sinhala && got.sinhala) {
+          w.sinhala = got.sinhala;
+          changed = true;
+          if (got.sinhalaSource === "meaning" || got.sinhalaSource === "literal") toCheck.push(w.english);
+        }
         if (!w.definition && got.definition) { w.definition = got.definition; changed = true; }
         if (!w.example && got.examples.length) { w.example = got.examples.join("\n"); changed = true; }
         if (changed) improved++;
@@ -1632,6 +1755,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
       var msg = (stopped ? "Stopped · " : "") +
                 improved + (improved === 1 ? " word" : " words") + " filled in";
       if (!stopped && left) msg += " · " + left + " still incomplete — add those by hand";
+      if (toCheck.length) msg += " · check the Sinhala for: " + toCheck.join(", ");
       note(msg, "synced");
     }
 
@@ -1965,6 +2089,7 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
   })();
 
   adopt(readLocal());
+  loadIdioms();
   syncCode = readSyncCode();
 
   if (syncCode) {

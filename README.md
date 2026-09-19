@@ -217,6 +217,28 @@ random order to reach the useful middle, the `=word` exact-form operator so
 sentences nearest 60 characters. Results are CDN-cached for a week, so each
 word's examples are stable.
 
+### Idioms and phrasal verbs
+
+Machine translation renders idioms word for word — *hit the sack* came back as
+"hit a sack", *under the weather* as "beneath the weather", *cut some slack* as
+"reduce a little". Seven of nine common idioms tested were wrong. Comparing
+Google's two endpoints doesn't help, since both use the same translator.
+
+So [`docs/idioms.json`](docs/idioms.json) holds phrases with checked Sinhala and
+is consulted first. Matching is loose: pronouns fold to *someone* / *one's*, so
+*cut some slack*, *cut me some slack* and *cut him some slack* all find
+*cut someone some slack* → බුරුලක් දෙනවා. The entry's dictionary form is also
+used to look up the explanation, which dictionaries file under the full form.
+
+A phrase that isn't on the list gets Google's translation of its short
+explanation where there is one — in testing that was right every time the
+explanation was short ("to go to bed" → ඇඳට යාමට), where translating the phrase
+itself mostly wasn't. Otherwise it falls back to translating the phrase, and
+either way the app says the Sinhala is a machine translation and needs checking.
+
+**To add or correct a phrase**, edit `docs/idioms.json` (dictionary form as the
+key, Sinhala as the value) and bump `VERSION` in `docs/sw.js`.
+
 ### The translation caveat
 
 Both Google endpoints are undocumented and rate-limited by IP. In testing,

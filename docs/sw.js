@@ -2,11 +2,12 @@
    The app shell is cached on install; Google Fonts are cached as they are
    used, so the second visit works with no network at all. */
 
-var VERSION = "wachana-v2";
+var VERSION = "wachana-v3";
 var SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
+  "./idioms.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/icon-maskable-512.png",
@@ -83,17 +84,20 @@ self.addEventListener("fetch", function (e) {
     return;
   }
 
-  // Everything else same-origin: cache first.
+  // Everything else same-origin: answer from cache at once, refresh in the
+  // background — so an edited idioms.json or icon reaches people on their
+  // next visit instead of never.
   if (url.origin === self.location.origin) {
     e.respondWith(
       caches.match(req).then(function (hit) {
-        return hit || fetch(req).then(function (res) {
+        var live = fetch(req).then(function (res) {
           if (res && res.ok) {
             var copy = res.clone();
             caches.open(VERSION).then(function (c) { c.put(req, copy); });
           }
           return res;
-        });
+        }).catch(function () { return hit; });
+        return hit || live;
       })
     );
   }
