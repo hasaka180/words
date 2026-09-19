@@ -1195,12 +1195,13 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
 
   // ---------- lookup ----------
   //
-  // Types a word, gets a definition, a Sinhala meaning and up to two examples.
-  // Three free sources, no keys, no account: dictionaryapi.dev for the
-  // definition, Google's public translate endpoint for the Sinhala, and
-  // Tatoeba (through api/examples) for real sentences. Each is optional —
-  // whatever answers gets used. A suggestion NEVER overwrites something the
-  // person typed: only empty fields, or fields still holding a suggestion.
+  // Type a word; its Sinhala meaning, a plain explanation and up to two
+  // example sentences are looked up. All free, no keys, no account:
+  //   Sinhala      Google's Chrome-dictionary endpoint, then translate_a
+  //   explanation  Datamuse (Wiktionary senses), then Wiktionary directly
+  //   examples     Tatoeba via api/examples, plus Wiktionary's
+  // A suggestion NEVER overwrites something the person typed: only empty
+  // fields, or fields still holding an earlier suggestion.
 
   var lookupTimer = null;
   var lookupAbort = null;
@@ -1248,107 +1249,256 @@ dialog::backdrop { background: rgba(10,16,20,.45); backdrop-filter: blur(2px); }
     lookupTimer = setTimeout(function () { runLookup(word); }, 650);
   }
 
+  // One slow source must never hold up the others: each gets its own deadline,
+  // and each field is filled the moment its own source answers.
+  var SOURCE_TIMEOUT_MS = 7000;
+
+  function timed(url, signal) {
+    var ctl = new AbortController();
+    var timer = setTimeout(function () { ctl.abort(); }, SOURCE_TIMEOUT_MS);
+    function stop() { ctl.abort(); }
+    signal.addEventListener("abort", stop);
+    return fetch(url, { signal: ctl.signal }).finally(function () {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", stop);
+    });
+  }
+
+  function jsonOrThrow(r) {
+    var json = (r.headers.get("content-type") || "").indexOf("json") > -1;
+    if (!r.ok || !json) throw new Error("unavailable");
+    return r.json();
+  }
+
   function runLookup(word) {
     if (lookupAbort) lookupAbort.abort();
     lookupAbort = new AbortController();
     var signal = lookupAbort.signal;
 
+    function current() {
+      return !signal.aborted && el.fEnglish.value.trim().toLowerCase() === word.toLowerCase();
+    }
+
+    var found = { definition: false, sinhala: false, examples: false };
     lookupStatus("Looking up " + word + "…", true);
 
-    // Three independent sources, none of which is allowed to sink the others.
-    Promise.allSettled([
-      fetchEntry(word, signal),
-      fetchSinhala(word, signal),
-      fetchExamples(word, signal)
-    ]).then(function (r) {
-      if (signal.aborted) return;
-      // They kept typing — this answer is for a word that no longer matters.
-      if (el.fEnglish.value.trim().toLowerCase() !== word.toLowerCase()) return;
-
-      var entry   = r[0].status === "fulfilled" ? r[0].value : null;
-      var sinhala = r[1].status === "fulfilled" ? r[1].value : null;
-      var extra   = r[2].status === "fulfilled" ? r[2].value : [];
-
-      var examples = [];
-      var seen = {};
-      ((entry && entry.examples) || []).concat(extra).forEach(function (t) {
-        var key = t.toLowerCase();
-        if (!seen[key] && examples.length < 2) { seen[key] = true; examples.push(t); }
-      });
-
-      if (!entry && !sinhala && !examples.length) {
-        lookupStatus("Couldn't look that up — type it in");
-        return;
-      }
-
+    var pDefinition = fetchDefinition(word, signal).then(function (text) {
+      if (!current()) return;
       lookedUp = word;
-      if (entry) fill(el.fDefinition, entry.definition);
-      if (sinhala) fill(el.fSinhala, sinhala);
-      if (examples.length) fill(el.fExample, examples.join("\n"));
+      found.definition = true;
+      fill(el.fDefinition, text);
+    });
 
-      if (entry && sinhala) lookupStatus("Suggested — check it before saving");
-      else if (entry) lookupStatus("Sinhala unavailable — type the meaning yourself");
-      else if (sinhala) lookupStatus("Sinhala added — no dictionary entry found");
-      else lookupStatus("Examples added — fill in the rest yourself");
+    var pSinhala = fetchSinhala(word, signal).then(function (text) {
+      if (!current()) return;
+      lookedUp = word;
+      found.sinhala = true;
+      fill(el.fSinhala, text);
+    });
+
+    var pExamples = Promise.allSettled([
+      fetchTatoeba(word, signal),
+      wiktionaryExamples(word, signal)
+    ]).then(function (r) {
+      if (!current()) return;
+      var pool = [];
+      r.forEach(function (x) { if (x.status === "fulfilled") pool = pool.concat(x.value); });
+      var picked = pickExamples(pool);
+      if (!picked.length) return;
+      lookedUp = word;
+      found.examples = true;
+      fill(el.fExample, picked.join("\n"));
+    });
+
+    Promise.allSettled([pDefinition, pSinhala, pExamples]).then(function () {
+      if (!current()) return;
+      var missing = [];
+      if (!found.sinhala) missing.push("Sinhala meaning");
+      if (!found.definition) missing.push("explanation");
+      if (!found.examples) missing.push("examples");
+
+      if (missing.length === 3) lookupStatus("Couldn't find that word — type it in yourself");
+      else if (missing.length) lookupStatus("No " + missing.join(" or ") + " found — add it yourself");
+      else lookupStatus("Suggested — check it before saving");
     });
   }
 
-  // Definition, plus any example the entry happens to carry.
-  // Free, no key, CORS open.
-  function fetchEntry(word, signal) {
-    return fetch("https://api.dictionaryapi.dev/api/v2/entries/en/" + encodeURIComponent(word), { signal: signal })
-      .then(function (r) {
-        if (!r.ok) throw new Error("no entry");
-        return r.json();
+  // ----- explanation -----
+
+  // Datamuse serves Wiktionary senses, everyday sense first, as "pos\ttext".
+  // Pick the first sense a learner would actually mean. A leading tag that
+  // only describes grammar — (transitive), (countable) — is stripped and the
+  // sense kept; a tag naming a register or subject — (archaic), (dated),
+  // (psychology) — marks a specialised sense, which is skipped. Skipping every
+  // tagged sense instead once turned "set" into "to hunt game with a setter".
+  var GRAMMAR_TAG = /^(transitive|intransitive|ambitransitive|ergative|reflexive|countable|uncountable|usually plural|in the plural|plural only|not comparable|comparable|stative|copulative|auxiliary|modal|attributive|predicative|postpositive|of a person|of people|of things)$/i;
+
+  function everydaySense(text) {
+    var m = text.match(/^\(([^)]*)\)\s*/);
+    if (!m) return text;
+    var tags = m[1].split(/\s*,\s*/);
+    var grammarOnly = tags.every(function (t) { return GRAMMAR_TAG.test(t); });
+    return grammarOnly ? text.slice(m[0].length) : null;
+  }
+
+  // Long definitions keep their core and their short synonyms:
+  // "Emotional pain, generally arising from misfortune, … ; sorrow; sadness."
+  // becomes "Emotional pain; sorrow; sadness."
+  function shorten(text) {
+    if (text.length <= 90) return text;
+    // Wiktionary can run several sub-senses together; the first is the meaning.
+    if (/\.\s/.test(text)) text = text.split(/\.\s/)[0] + ".";
+    if (text.length <= 90) return text;
+    var parts = text.replace(/\.$/, "").split(/;\s*/);
+    var head = parts[0].split(/,\s*(?:generally|especially|usually|often|typically|particularly|chiefly|mainly|containing|including|such as|which|that is)\b/)[0];
+    var synonyms = parts.slice(1).filter(function (x) { return x.split(/\s+/).length <= 3; });
+    var out = [head].concat(synonyms).join("; ");
+    return (out.length < text.length ? out : text).replace(/[.;,\s]*$/, "") + ".";
+  }
+
+  function simplest(defs) {
+    var clean = defs.map(function (d) {
+      return String(d || "").replace(/^[^\t]*\t/, "").trim();
+    }).filter(Boolean);
+    var everyday = clean.map(everydaySense).filter(Boolean);
+    var pick = (everyday[0] || clean[0] || "")
+      .replace(/^\([^)]*\)\s*/, "")
+      .replace(/\s*\([^)]*\)\s*$/, "")
+      .trim();
+    return pick ? shorten(pick) : "";
+  }
+
+  function fetchDefinition(word, signal) {
+    var url = "https://api.datamuse.com/words?md=d&max=1&sp=" + encodeURIComponent(word.toLowerCase());
+    return timed(url, signal)
+      .then(jsonOrThrow)
+      .then(function (list) {
+        var hit = list && list[0];
+        if (!hit || String(hit.word).toLowerCase() !== word.toLowerCase() || !hit.defs) {
+          throw new Error("no entry");
+        }
+        var text = simplest(hit.defs);
+        if (!text) throw new Error("no entry");
+        return text;
       })
-      .then(function (data) {
-        if (!Array.isArray(data)) throw new Error("no entry");
-        var defs = [], exs = [];
-        data.forEach(function (entry) {
-          (entry.meanings || []).forEach(function (m) {
-            (m.definitions || []).forEach(function (d) {
-              if (d.definition) defs.push(d.definition);
-              if (d.example) exs.push(d.example);
-            });
-          });
-        });
-        if (!defs.length) throw new Error("no entry");
-        return { definition: defs[0], examples: exs };
+      .catch(function (e) {
+        if (signal.aborted) throw e;
+        return wiktionaryDefinition(word, signal);
       });
   }
 
-  // Sinhala, from Google's public translate endpoint — no key, CORS open.
-  // It is undocumented: when it sees too much traffic from one address it
-  // answers with an HTML "Sorry..." page instead of JSON. Anything that isn't
-  // JSON counts as a miss, and the person types the meaning themselves.
+  // ----- Wiktionary: fallback explanation, and short usage examples -----
+
+  var wiktionaryCache = {};
+
+  function wiktionary(word, signal) {
+    var key = word.toLowerCase();
+    if (!wiktionaryCache[key]) {
+      var url = "https://en.wiktionary.org/api/rest_v1/page/definition/" + encodeURIComponent(key);
+      wiktionaryCache[key] = timed(url, signal)
+        .then(jsonOrThrow)
+        .then(function (d) { return (d && d.en) || []; });
+      wiktionaryCache[key].catch(function () { delete wiktionaryCache[key]; });
+    }
+    return wiktionaryCache[key];
+  }
+
+  function stripTags(html) {
+    var box = document.createElement("div");
+    box.innerHTML = String(html || "");
+    return (box.textContent || "").replace(/\s+/g, " ").trim();
+  }
+
+  function wiktionaryDefinition(word, signal) {
+    return wiktionary(word, signal).then(function (parts) {
+      var defs = [];
+      parts.forEach(function (p) {
+        if (/^(symbol|proper noun|letter|prefix|suffix)$/i.test(p.partOfSpeech || "")) return;
+        (p.definitions || []).forEach(function (d) { defs.push("\t" + stripTags(d.definition)); });
+      });
+      var text = simplest(defs);
+      if (!text) throw new Error("no entry");
+      return text;
+    });
+  }
+
+  function wiktionaryExamples(word, signal) {
+    return wiktionary(word, signal).then(function (parts) {
+      var out = [];
+      parts.forEach(function (p) {
+        (p.definitions || []).forEach(function (d) {
+          (d.examples || []).forEach(function (x) { out.push(stripTags(x)); });
+        });
+      });
+      return out;
+    });
+  }
+
+  // ----- examples -----
+
+  // Real sentences from Tatoeba, via our proxy (Tatoeba sends no CORS headers).
+  // Absent on a static host; Wiktionary's examples cover that case.
+  function fetchTatoeba(word, signal) {
+    return timed("api/examples?word=" + encodeURIComponent(word), signal)
+      .then(jsonOrThrow)
+      .then(function (d) { return d.examples || []; });
+  }
+
+  // Full sentences only — Wiktionary often gives fragments like
+  // "meticulous search", which teach less than a sentence does.
+  function pickExamples(pool) {
+    var seen = {};
+    var out = [];
+    pool.forEach(function (t) {
+      t = String(t || "").trim();
+      var key = t.toLowerCase();
+      if (out.length >= 2 || !t || seen[key]) return;
+      if (t.split(/\s+/).length < 4 || t.length > 160) return;
+      seen[key] = true;
+      out.push(t);
+    });
+    return out;
+  }
+
+  // ----- Sinhala -----
+
+  // Google's Chrome dictionary endpoint: no key, CORS open, and in testing it
+  // answered every word in a row where translate.googleapis.com had started
+  // refusing with an HTML "Sorry..." page. That one stays as the fallback.
   function fetchSinhala(word, signal) {
+    var url = "https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=en&tl=si&q=" +
+              encodeURIComponent(word);
+    return timed(url, signal)
+      .then(jsonOrThrow)
+      .then(function (d) {
+        // ["text"] for a word; some inputs come back as [["text", "source"]].
+        var first = Array.isArray(d) ? d[0] : null;
+        return usableSinhala(Array.isArray(first) ? first[0] : first, word);
+      })
+      .catch(function (e) {
+        if (signal.aborted) throw e;
+        return sinhalaFallback(word, signal);
+      });
+  }
+
+  function sinhalaFallback(word, signal) {
     var url = "https://translate.googleapis.com/translate_a/single" +
               "?client=gtx&sl=en&tl=si&dt=t&q=" + encodeURIComponent(word);
-    return fetch(url, { signal: signal })
-      .then(function (r) {
-        var json = (r.headers.get("content-type") || "").indexOf("json") > -1;
-        if (!r.ok || !json) throw new Error("unavailable");
-        return r.json();
-      })
+    return timed(url, signal)
+      .then(jsonOrThrow)
       .then(function (d) {
         var chunks = (d && d[0]) || [];
-        var text = chunks.map(function (c) { return (c && c[0]) || ""; }).join("").trim();
-        // A word it cannot translate comes back unchanged.
-        if (!text || text.toLowerCase() === word.toLowerCase()) throw new Error("no translation");
-        return text;
+        return usableSinhala(chunks.map(function (c) { return (c && c[0]) || ""; }).join(""), word);
       });
   }
 
-  // Better examples, via our own Tatoeba proxy. Not present on a static host,
-  // which is fine — the dictionary entry may already have carried one.
-  function fetchExamples(word, signal) {
-    return fetch("api/examples?word=" + encodeURIComponent(word), { signal: signal })
-      .then(function (r) {
-        var json = (r.headers.get("content-type") || "").indexOf("json") > -1;
-        if (!r.ok || !json) throw new Error("unavailable");
-        return r.json();
-      })
-      .then(function (d) { return d.examples || []; });
+  // A word it can't translate comes back unchanged — that's a miss, not a meaning.
+  function usableSinhala(text, word) {
+    text = String(text || "").trim();
+    if (!text || text.toLowerCase() === word.toLowerCase() || !/[඀-෿]/.test(text)) {
+      throw new Error("no translation");
+    }
+    return text;
   }
 
   // ---------- sync ----------

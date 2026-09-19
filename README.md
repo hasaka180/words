@@ -173,41 +173,57 @@ two example sentences are looked up. Suggested fields are tinted and must be
 checked before saving; a suggestion never overwrites text typed by hand, and the
 moment a suggested field is edited it stops being touched.
 
-Three free sources, **no API keys and no account**:
+Free sources, **no API keys and no account**. Each field fills the moment its
+own source answers, and every source has a 7-second deadline, so one slow
+service never holds up the others:
 
-| Field | Source | Notes |
+| Field | Source | Fallback |
 | --- | --- | --- |
-| Definition | [dictionaryapi.dev](https://dictionaryapi.dev) | CORS open, called straight from the page |
-| Sinhala | `translate.googleapis.com` (public endpoint) | CORS open, no key — see the caveat below |
-| Examples | [Tatoeba](https://tatoeba.org) via [`api/examples.js`](api/examples.js) | Proxied because Tatoeba sends no CORS headers |
+| Sinhala | Google's Chrome-dictionary endpoint (`clients5.google.com`) | `translate.googleapis.com` |
+| Explanation | [Datamuse](https://www.datamuse.com/api/) (Wiktionary senses, ~0.3s) | Wiktionary REST API |
+| Examples | [Tatoeba](https://tatoeba.org) via [`api/examples.js`](api/examples.js) | Wiktionary's usage examples |
 
-Each source is independent — whatever answers gets used, and the status line
-under the word field says what came back. If translation is unavailable you
-still get the definition and examples, and type the Sinhala yourself.
+The status line under the word field says what was found and what to add by
+hand.
+
+### Picking the simplest explanation
+
+Dictionaries list many senses. The app takes the first *everyday* one: a
+leading grammar tag such as *(transitive)* is stripped and the sense kept, but
+a register or subject tag — *(archaic)*, *(dated)*, *(psychology)* — marks a
+specialised sense, which is skipped. Long definitions keep their core and their
+short synonyms, so *grief* becomes "Emotional pain; sorrow; sadness." rather
+than a 130-character sentence.
+
+### Picking example sentences
+
+Tatoeba ranks by relevance, which puts two-word stubs like "He's resilient."
+first, and its longest-first order returns whole paragraphs. The proxy uses
+random order to reach the useful middle, the `=word` exact-form operator so
+*candid* doesn't return sentences about candidates, and keeps 4–25 word
+sentences nearest 60 characters. Results are CDN-cached for a week, so each
+word's examples are stable.
 
 ### The translation caveat
 
-`translate.googleapis.com/translate_a/single` is the endpoint Google's own web
-page uses. It needs no key and sends `Access-Control-Allow-Origin: *`, but it is
-**undocumented and rate-limited by IP**: past some volume it returns an HTML
-"Sorry…" page instead of JSON. The app treats any non-JSON reply as a miss.
+Both Google endpoints are undocumented and rate-limited by IP. In testing,
+`translate.googleapis.com` started answering with an HTML "Sorry…" page after a
+burst of requests and stayed blocked for days, while the `clients5` endpoint
+kept answering. The app treats any non-JSON reply as a miss and falls through.
+They're called from the browser, not the server, so each person's requests come
+from their own address. Either can change without notice.
 
-Because the page calls it directly from the browser, the request comes from each
-person's own address — one person adding words occasionally is a very different
-traffic pattern from a shared server address, which is why this is *not* proxied
-through the serverless function like Tatoeba is.
-
-It is also not a supported API, so it can change or stop without notice. The
-supported alternative is Google Cloud Translation (500k characters/month free),
-which needs a billing account with a card on file.
+Single-word translation also can't know which sense you mean: *set* comes back
+as කට්ටලය ("a set, a collection") even when the explanation picked is the verb.
+Check suggestions before saving — that's why they're tinted.
 
 ### Why not the other free options
 
 Sampled before settling on the above: MyMemory's en→si gave *candid → "humble"*,
 *honest → "policy"*, *meticulous → "excellent"* and *resilient →* a phrase
 closer to its opposite — four wrong out of five. Every public Lingva instance
-returned HTTP 500. dictionaryapi.dev carried an example for only two of six
-sampled words, which is why Tatoeba is there to top them up.
+returned HTTP 500. dictionaryapi.dev has good definitions but took ~20 seconds per
+request when last tested, so it was dropped.
 
 ## Syncing across devices
 

@@ -2,7 +2,7 @@
    The app shell is cached on install; Google Fonts are cached as they are
    used, so the second visit works with no network at all. */
 
-var VERSION = "wachana-v1";
+var VERSION = "wachana-v2";
 var SHELL = [
   "./",
   "./index.html",
@@ -39,6 +39,11 @@ self.addEventListener("fetch", function (e) {
   if (req.method !== "GET") return;
 
   var url = new URL(req.url);
+
+  // Never cache the API. Sync must always read the live copy — a cached
+  // response here would hand back the first snapshot forever, and the two
+  // devices would stop seeing each other's words.
+  if (url.origin === self.location.origin && url.pathname.indexOf("/api/") !== -1) return;
   var isFont = url.hostname === "fonts.googleapis.com" ||
                url.hostname === "fonts.gstatic.com";
 
